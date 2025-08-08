@@ -1,0 +1,13 @@
+# Local environment variables (contains secrets)
+.envrc.local
+
+# Test artifacts
+test-local.sarif
+test.sarif
+*.sarif
+
+# Checkmarx CLI
+cx
+cx-cli.tar.gz
+LICENSE
+README.md

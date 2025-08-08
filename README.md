@@ -1,72 +1,199 @@
-# Midnight Template Repository
+# Upload SARIF to Checkmarx GitHub Action
 
-This GitHub repository should be used as a template when creating a new Midnight GitHub repository.
-The template is configured with default repository settings and a set of default files that are expected to exist in all Midnight GitHub repositories.
+A GitHub Action that uploads SARIF (Static Analysis Results Interchange Format) files to Checkmarx using their BYOR (Bring Your Own Results) feature. This enables security vulnerabilities from tools like `cargo-audit` to be visible in Checkmarx dashboards.
 
-### LICENSE
+## Purpose
 
-Apache 2.0.
+Checkmarx has limited native support for Rust security scanning. This action bridges that gap by allowing you to upload SARIF files from Rust security tools (or any other SARIF-producing tools) directly to Checkmarx, making vulnerabilities visible in your Checkmarx dashboard alongside results from other languages.
 
-### README.md
+## Features
 
-Provides a brief description for users and developers who want to understand the purpose, setup, and usage of the repository.
+- Upload SARIF files to Checkmarx via BYOR
+- Uses same authentication as official Checkmarx action
+- Validates SARIF file size (10MB limit)
+- Simple, focused implementation
+- Reusable across all Midnight repositories
 
-### SECURITY.md
+## Usage
 
-Provides a brief description of the Midnight Foundation's security policy and how to properly disclose security issues.
+### Basic Example
 
-### CONTRIBUTING.md
+```yaml
+- name: Run cargo audit
+  run: cargo audit --format sarif > scan.sarif || true
 
-Provides guidelines for how people can contribute to the Midnight project.
+- name: Upload SARIF to Checkmarx
+  uses: midnight-ntwrk/upload-sarif-github-action@v1
+  with:
+    sarif-file: scan.sarif
+    project-name: ${{ github.event.repository.name }}
+    cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+    cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+    cx-tenant: ${{ secrets.CX_TENANT }}
+```
 
-### CODEOWNERS
+### Complete Workflow Example
 
-Defines repository ownership rules.
+```yaml
+name: Security Scan
 
-### ISSUE_TEMPLATE
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
-Provides templates for reporting various types of issues, such as: bug report, documentation improvement and feature request.
+jobs:
+  rust-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      
+      - name: Run cargo audit
+        run: cargo audit --format sarif > scan.sarif || true
+      
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scan.sarif
+      
+      - name: Upload SARIF to Checkmarx
+        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        with:
+          sarif-file: scan.sarif
+          project-name: ${{ github.event.repository.name }}
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+```
 
-### PULL_REQUEST_TEMPLATE
+## Inputs
 
-Provides a template for a pull request.
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `sarif-file` | Path to SARIF file to upload | **Yes** | - |
+| `project-name` | Checkmarx project name | **Yes** | - |
+| `cx-client-id` | Checkmarx OAuth2 client ID | **Yes** | - |
+| `cx-client-secret` | Checkmarx OAuth2 client secret | **Yes** | - |
+| `cx-tenant` | Checkmarx tenant | **Yes** | - |
+| `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
+| `branch` | Branch name (for future multi-branch support) | No | Current branch |
+| `additional-params` | Additional CLI parameters for cx utils import | No | - |
 
-### CLA Assistant
+## Outputs
 
-The Midnight Foundation appreciates contributions, and like many other open source projects asks contributors to sign a contributor
-License Agreement before accepting contributions. We use CLA assistant (https://github.com/cla-assistant/cla-assistant) to streamline the CLA
-signing process, enabling contributors to sign our CLAs directly within a GitHub pull request.
+| Output | Description |
+|--------|-------------|
+| `upload-status` | Status of the SARIF upload (`success` or `failed`) |
+| `project-id` | Checkmarx project ID (if available) |
 
-### Dependabot
+## Requirements
 
-The Midnight Foundation uses GitHub Dependabot feature to keep our projects dependencies up-to-date and address potential security vulnerabilities. 
+### SARIF File Requirements
+- **Format**: SARIF 2.1.0
+- **Max Size**: 10 MB
+- **Max Results**: 25,000 per run (top 5,000 will be persisted)
 
-### Checkmarx
+### Checkmarx Requirements
+- Valid Checkmarx account with BYOR permissions
+- OAuth2 credentials (client ID and secret)
+- Tenant information
 
-The Midnight Foundation uses Checkmarx for application security (AppSec) to identify and fix security vulnerabilities.
-All repositories are scanned with Checkmarx's suite of tools including: Static Application Security Testing (SAST), Infrastructure as Code (IaC), Software Composition Analysis (SCA), API Security, Container Security and Supply Chain Scans (SCS).
+### GitHub Secrets Setup
 
-### Unito
+Add these secrets to your repository:
+- `CX_CLIENT_ID` - Your Checkmarx OAuth2 client ID
+- `CX_CLIENT_SECRET_EU` - Your Checkmarx OAuth2 client secret (EU region)
+- `CX_TENANT` - Your Checkmarx tenant name
 
-Facilitates two-way data synchronization, automated workflows and streamline processes between: Jira, GitHub issues and Github project Kanban board. 
+These are the same secrets used by the standard Checkmarx scanning action.
 
-# TODO - New Repo Owner
+## Supported Tools
 
-### Software Package Data Exchange (SPDX)
-Include the following Software Package Data Exchange (SPDX) short-form identifier in a comment at the top headers of each source code file.
+Any tool that generates SARIF 2.1.0 format, including:
+- **cargo-audit** - Rust vulnerability scanner (primary use case)
+- **trivy** - Container and filesystem scanner
+- **semgrep** - Static analysis tool
+- **snyk** - Dependency vulnerability scanner
+- Any other SARIF-producing security tool
 
+## Limitations
 
- <I>// This file is part of <B>REPLACE WITH REPO-NAME</B>.<BR>
- // Copyright (C) 2025 Midnight Foundation<BR>
- // SPDX-License-Identifier: Apache-2.0<BR>
- // Licensed under the Apache License, Version 2.0 (the "License");<BR>
- // You may not use this file except in compliance with the License.<BR>
- // You may obtain a copy of the License at<BR>
- //<BR>
- //	http://www.apache.org/licenses/LICENSE-2.0<BR>
- //<BR>
- // Unless required by applicable law or agreed to in writing, software<BR>
- // distributed under the License is distributed on an "AS IS" BASIS,<BR>
- // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.<BR>
- // See the License for the specific language governing permissions and<BR>
- // limitations under the License.</I>
+- SARIF files must be under 10MB
+- Maximum 25,000 results per upload (top 5,000 persisted by Checkmarx)
+- Currently supports main branch only (multi-branch support planned)
+- Requires Checkmarx BYOR feature access
+
+## Troubleshooting
+
+### SARIF file not found
+Ensure the SARIF file is generated before calling this action. Use `|| true` after generation commands to prevent workflow failure if no issues are found.
+
+### Authentication failures
+Verify that:
+- Secrets are correctly configured
+- Client has BYOR permissions in Checkmarx
+- Base URI matches your Checkmarx region
+
+### File size exceeded
+If your SARIF file exceeds 10MB:
+- Consider filtering results before upload
+- Split into multiple smaller files
+- Focus on high/critical severity issues only
+
+## Development
+
+### Testing Locally
+
+```bash
+# Generate test SARIF file
+cargo audit --format sarif > test.sarif
+
+# Test the action
+act -s CX_CLIENT_ID=xxx -s CX_CLIENT_SECRET_EU=xxx -s CX_TENANT=xxx
+```
+
+### Future Enhancements (Roadmap)
+
+**Phase 2 - Enhanced Upload**
+- Combined upload to both GitHub Security and Checkmarx
+- Automatic fixing of empty URIs that GitHub rejects
+- Cleaner workflow integration
+
+**Phase 3 - Multi-branch Support**
+- Support for release branches
+- Branch-specific project naming
+- Parallel branch scanning
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on contributing to this project.
+
+## Security
+
+For security concerns, please see [SECURITY.md](SECURITY.md).
+
+## License
+
+Apache 2.0 - See [LICENSE](LICENSE) for details.
+
+## Credits
+
+Created by the Midnight security team to enhance Rust security visibility in Checkmarx.
+
+Based on requirements from:
+- **Sponsor**: Giles Cope
+- **Implementation**: Sean Kwak
+- **JIRA**: PM-18735
+
+Special thanks to the Rust security ecosystem, particularly the `cargo-audit` team for SARIF support.
+
+## Support
+
+For issues or questions:
+- Create an issue in this repository
+- Contact the Midnight security team
+- See [Checkmarx BYOR Documentation](https://docs.checkmarx.com/en/34965-230340-bring-your-own-results--byor-.html)

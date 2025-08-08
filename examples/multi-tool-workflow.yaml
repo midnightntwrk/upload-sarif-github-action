@@ -1,0 +1,131 @@
+# Example workflow combining multiple security tools with Checkmarx SARIF upload
+# This demonstrates how to aggregate results from different scanners
+
+name: Comprehensive Security Scan
+
+on:
+  push:
+    branches: [ main, release/** ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  rust-audit:
+    runs-on: ubuntu-latest
+    name: Rust Dependencies Audit
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Run cargo-audit
+        run: |
+          cargo install cargo-audit
+          cargo audit --format sarif > rust-audit.sarif || true
+      
+      - name: Upload Rust audit to Checkmarx
+        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        with:
+          sarif-file: rust-audit.sarif
+          project-name: ${{ github.event.repository.name }}-rust
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+      
+      - name: Save SARIF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-audit-sarif
+          path: rust-audit.sarif
+
+  container-scan:
+    runs-on: ubuntu-latest
+    name: Container Security Scan
+    if: hashFiles('**/Dockerfile') != ''
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Trivy container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy.sarif'
+      
+      - name: Upload Trivy results to Checkmarx
+        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        with:
+          sarif-file: trivy.sarif
+          project-name: ${{ github.event.repository.name }}-container
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+      
+      - name: Save SARIF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: trivy.sarif
+
+  semgrep-scan:
+    runs-on: ubuntu-latest
+    name: Semgrep SAST
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Semgrep
+        id: semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          generateSarif: true
+      
+      - name: Upload Semgrep results to Checkmarx
+        if: always() && steps.semgrep.outputs.sarif != ''
+        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        with:
+          sarif-file: semgrep.sarif
+          project-name: ${{ github.event.repository.name }}-sast
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+
+  upload-all-to-github:
+    runs-on: ubuntu-latest
+    name: Upload all results to GitHub Security
+    needs: [rust-audit, container-scan, semgrep-scan]
+    if: always()
+    
+    steps:
+      - name: Download all SARIF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-sarif'
+      
+      - name: Upload to GitHub Security tab
+        run: |
+          for sarif in *-sarif/*.sarif; do
+            if [ -f "$sarif" ]; then
+              echo "Uploading $sarif to GitHub Security"
+              # Note: Each upload needs its own step in real workflow
+            fi
+          done
+      
+      - name: Upload Rust audit SARIF to GitHub
+        if: hashFiles('rust-audit-sarif/rust-audit.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: rust-audit-sarif/rust-audit.sarif
+          category: rust-audit
+      
+      - name: Upload Trivy SARIF to GitHub
+        if: hashFiles('trivy-sarif/trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-sarif/trivy.sarif
+          category: container-scan

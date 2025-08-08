@@ -1,0 +1,58 @@
+# Example workflow for using cargo-audit with Checkmarx SARIF upload
+# This workflow demonstrates how to scan Rust dependencies and upload results to Checkmarx
+
+name: Rust Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      
+      - name: Run cargo audit and generate SARIF
+        run: |
+          # Generate SARIF report
+          # Using || true to ensure workflow continues even if vulnerabilities are found
+          cargo audit --format sarif > cargo-audit.sarif || true
+          
+          # Display summary for logs
+          echo "Cargo audit completed. SARIF file size: $(stat -c%s cargo-audit.sarif) bytes"
+      
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: cargo-audit.sarif
+          category: cargo-audit
+      
+      - name: Upload SARIF to Checkmarx
+        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        with:
+          sarif-file: cargo-audit.sarif
+          project-name: ${{ github.event.repository.name }}
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+      
+      - name: Upload SARIF as artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-audit-sarif
+          path: cargo-audit.sarif
+          retention-days: 30
