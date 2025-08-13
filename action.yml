@@ -151,8 +151,8 @@ runs:
       if: always()
       shell: bash
       run: |
-        # Clean up CLI installation files
-        rm -f cx-cli.tar.gz cx LICENSE README.md
-        
         # Clear stored credentials
         ./cx configure clear || true
+
+        # Clean up CLI installation files
+        rm -f cx-cli.tar.gz cx LICENSE README.md
