@@ -120,21 +120,22 @@ runs:
         echo "Project: ${{ inputs.project-name }}"
         echo "Branch: ${{ inputs.branch }}"
         echo "SARIF file: ${{ inputs.sarif-file }}"
-        
+
         # Prepare the import command
         IMPORT_CMD="./cx utils import"
         IMPORT_CMD="$IMPORT_CMD --project-name \"${{ inputs.project-name }}\""
-        IMPORT_CMD="$IMPORT_CMD --file \"${{ inputs.sarif-file }}\""
-        IMPORT_CMD="$IMPORT_CMD --base-uri \"${{ inputs.base-uri }}\""
-        IMPORT_CMD="$IMPORT_CMD --client-id \"${{ inputs.cx-client-id }}\""
-        IMPORT_CMD="$IMPORT_CMD --client-secret \"${{ inputs.cx-client-secret }}\""
-        IMPORT_CMD="$IMPORT_CMD --tenant \"${{ inputs.cx-tenant }}\""
-        
+        IMPORT_CMD="$IMPORT_CMD --import-file-path \"${{ inputs.sarif-file }}\""
+        # below shouldn't be needed as already authed above.
+        # IMPORT_CMD="$IMPORT_CMD --base-uri \"${{ inputs.base-uri }}\""
+        # IMPORT_CMD="$IMPORT_CMD --client-id \"${{ inputs.cx-client-id }}\""
+        # IMPORT_CMD="$IMPORT_CMD --client-secret \"${{ inputs.cx-client-secret }}\""
+        # IMPORT_CMD="$IMPORT_CMD --tenant \"${{ inputs.cx-tenant }}\""
+
         # Add any additional parameters
         if [ -n "${{ inputs.additional-params }}" ]; then
           IMPORT_CMD="$IMPORT_CMD ${{ inputs.additional-params }}"
         fi
-        
+
         # Execute the import
         echo "Executing: cx utils import [credentials hidden]"
         if eval "$IMPORT_CMD"; then
