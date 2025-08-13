@@ -112,6 +112,35 @@ runs:
           exit 1
         fi
 
+    - name: Transform SARIF for Checkmarx compatibility
+      shell: bash
+      run: |
+        echo "Checking SARIF format for Checkmarx compatibility..."
+        
+        # Check if the SARIF has tool.driver.name structure (cargo-audit format)
+        if grep -q '"tool".*"driver".*"name"' "${{ inputs.sarif-file }}"; then
+          echo "Detected cargo-audit SARIF format. Transforming for Checkmarx..."
+          
+          # Create a backup
+          cp "${{ inputs.sarif-file }}" "${{ inputs.sarif-file }}.original"
+          
+          # Transform: Add tool.name at top level (Checkmarx may require this)
+          # Based on investigation: Checkmarx might need tool.name, not just tool.driver.name
+          if command -v jq >/dev/null 2>&1; then
+            jq '.runs |= map(
+              if .tool.driver.name then
+                .tool.name = .tool.driver.name |
+                .tool.version = (.tool.driver.version // "unknown")
+              else . end
+            )' "${{ inputs.sarif-file }}.original" > "${{ inputs.sarif-file }}"
+            echo "SARIF transformed: Added tool.name and tool.version at tool level"
+          else
+            echo "::warning::jq not found, skipping SARIF transformation. Results may not appear in Checkmarx UI."
+          fi
+        else
+          echo "SARIF format appears compatible, proceeding without transformation"
+        fi
+
     - name: Upload SARIF to Checkmarx
       shell: bash
       id: upload

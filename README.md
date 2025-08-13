@@ -120,6 +120,15 @@ Any tool that generates SARIF 2.1.0 format, including:
 - **snyk** - Dependency vulnerability scanner
 - Any other SARIF-producing security tool
 
+## How it Works
+
+1. **Validates** the SARIF file exists and is within size limits
+2. **Installs** the Checkmarx CLI tool appropriate for the runner OS/architecture
+3. **Authenticates** with Checkmarx using OAuth2 credentials
+4. **Transforms** SARIF if needed (adds `tool.name` at top level for Checkmarx compatibility)
+5. **Uploads** the SARIF file using the `cx utils import` command
+6. **Cleans up** credentials and temporary files
+
 ## Limitations
 
 - SARIF files must be under 10MB
