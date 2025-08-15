@@ -107,15 +107,6 @@ jobs:
         with:
           pattern: '*-sarif'
       
-      - name: Upload to GitHub Security tab
-        run: |
-          for sarif in *-sarif/*.sarif; do
-            if [ -f "$sarif" ]; then
-              echo "Uploading $sarif to GitHub Security"
-              # Note: Each upload needs its own step in real workflow
-            fi
-          done
-      
       - name: Upload Rust audit SARIF to GitHub
         if: hashFiles('rust-audit-sarif/rust-audit.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
