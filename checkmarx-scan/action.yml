@@ -1,0 +1,148 @@
+name: 'Checkmarx Full Scan and Upload'
+description: 'Performs complete Checkmarx scan with SARIF upload to both GitHub Security and Checkmarx BYOR'
+author: 'Midnight'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  project-name:
+    description: 'Checkmarx project name'
+    required: true
+    default: ${{ github.event.repository.name }}
+  cx-client-id:
+    description: 'Checkmarx OAuth2 client ID'
+    required: true
+  cx-client-secret:
+    description: 'Checkmarx OAuth2 client secret'
+    required: true
+  cx-tenant:
+    description: 'Checkmarx tenant'
+    required: true
+  base-uri:
+    description: 'Checkmarx server URL'
+    required: false
+    default: 'https://eu-2.ast.checkmarx.net/'
+  scs-repo-token:
+    description: 'GitHub token for SCS scanning (Supply Chain Security)'
+    required: true
+  additional-params:
+    description: 'Additional parameters for Checkmarx scan'
+    required: false
+    default: ''
+  upload-to-github:
+    description: 'Upload SARIF to GitHub Security (automatically disabled for private repos)'
+    required: false
+    default: 'true'
+  upload-to-checkmarx:
+    description: 'Upload SARIF to Checkmarx via BYOR'
+    required: false
+    default: 'true'
+
+outputs:
+  scan-id:
+    description: 'Checkmarx scan ID'
+    value: ${{ steps.checkmarx-scan.outputs.scan-id }}
+  sarif-file:
+    description: 'Path to generated SARIF file'
+    value: 'cx_result.sarif'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install beautifulsoup4 requests
+
+    - name: Check Checkmarx EU2 status
+      shell: bash
+      run: |
+        cat <<'EOF' > /tmp/check_cx_status.py
+        import requests
+        from bs4 import BeautifulSoup
+        
+        # URL of the status page
+        url = "https://eu2-status.ast.checkmarx.net/"
+        
+        try:
+            # Send a GET request to fetch the HTML content
+            response = requests.get(url)
+            response.raise_for_status()  # Check for request errors
+            
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Locate the status element based on its HTML structure
+            status_element = soup.find('aside', class_='operational state-bar')
+            
+            # Check if the status is operational
+            if status_element and 'Operating Normally' in status_element.text:
+                print("The status is operational with status")
+                print(status_element.text)
+            else:
+                print("The status is not operational.")
+        except requests.exceptions.RequestException as e:
+            print(f"An error occurred: {e}")
+        EOF
+        python3 /tmp/check_cx_status.py
+
+    - name: Check Checkmarx server health
+      shell: bash
+      run: |
+        response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/)
+        if [ "$response" != "200" ]; then
+          echo "Checkmarx One server is down. Proceeding without breaking the build."
+          exit 0  # Do not fail the build
+        else
+          echo "Checkmarx One server is healthy. Proceeding with scan."
+        fi
+
+    - name: Run Checkmarx scan
+      id: checkmarx-scan
+      uses: checkmarx/ast-github-action@fa338ce82069b297c4852ac77e2d168db9fb56d8 #2.3.21
+      with:
+        cx_tenant: ${{ inputs.cx-tenant }}
+        base_uri: ${{ inputs.base-uri }}
+        cx_client_id: ${{ inputs.cx-client-id }}
+        cx_client_secret: ${{ inputs.cx-client-secret }}
+        additional_params: >
+          --scs-repo-url https://github.com/${{ github.repository }}
+          --scs-repo-token ${{ inputs.scs-repo-token }}
+          --report-format sarif
+          ${{ inputs.additional-params }}
+
+    - name: Fix SARIF for GitHub upload
+      shell: bash
+      run: |
+        # GitHub fails if artifactLocation.uri is empty
+        # Replace empty URIs with a placeholder file
+        if [ -f "./cx_result.sarif" ]; then
+          mv ./cx_result.sarif ./cx_result.sarif.orig
+          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif
+          echo "Fixed empty artifactLocation URIs in SARIF file"
+        else
+          echo "::warning::No SARIF file generated from Checkmarx scan"
+        fi
+
+    - name: Upload SARIF to GitHub Security
+      if: ${{ inputs.upload-to-github == 'true' && github.event.repository.private == false }}
+      uses: github/codeql-action/upload-sarif@4e20239e7b23c6078c563635c41d109adaaa1f72  # v3.29.2
+      with:
+        sarif_file: cx_result.sarif
+      continue-on-error: true
+
+    - name: Upload SARIF to Checkmarx BYOR
+      if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
+      # Note: This references the BYOR action from the same repo
+      # Will work correctly once merged to main
+      uses: midnightntwrk/upload-sarif-github-action@main
+      with:
+        sarif-file: cx_result.sarif
+        project-name: ${{ inputs.project-name }}
+        cx-client-id: ${{ inputs.cx-client-id }}
+        cx-client-secret: ${{ inputs.cx-client-secret }}
+        cx-tenant: ${{ inputs.cx-tenant }}
+        base-uri: ${{ inputs.base-uri }}
+      continue-on-error: true

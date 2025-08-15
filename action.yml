@@ -1,0 +1,187 @@
+name: 'Upload SARIF to Checkmarx'
+description: 'Uploads SARIF files to Checkmarx via BYOR (Bring Your Own Results)'
+author: 'Midnight'
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  sarif-file:
+    description: 'Path to SARIF file to upload'
+    required: true
+  project-name:
+    description: 'Checkmarx project name'
+    required: true
+  base-uri:
+    description: 'Checkmarx server URL'
+    required: true
+    default: 'https://eu-2.ast.checkmarx.net/'
+  cx-client-id:
+    description: 'Checkmarx OAuth2 client ID'
+    required: true
+  cx-client-secret:
+    description: 'Checkmarx OAuth2 client secret'
+    required: true
+  cx-tenant:
+    description: 'Checkmarx tenant'
+    required: true
+  branch:
+    description: 'Branch name (for future multi-branch support)'
+    required: false
+    default: ${{ github.ref_name }}
+  additional-params:
+    description: 'Additional CLI parameters for cx utils import'
+    required: false
+    default: ''
+
+outputs:
+  upload-status:
+    description: 'Status of the SARIF upload to Checkmarx'
+    value: ${{ steps.upload.outputs.status }}
+  project-id:
+    description: 'Checkmarx project ID'
+    value: ${{ steps.upload.outputs.project-id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check SARIF file
+      shell: bash
+      run: |
+        if [ ! -f "${{ inputs.sarif-file }}" ]; then
+          echo "::error::SARIF file not found: ${{ inputs.sarif-file }}"
+          exit 1
+        fi
+        
+        # Check file size (10MB limit for BYOR)
+        FILE_SIZE=$(stat -f%z "${{ inputs.sarif-file }}" 2>/dev/null || stat -c%s "${{ inputs.sarif-file }}" 2>/dev/null)
+        MAX_SIZE=$((10 * 1024 * 1024))  # 10MB in bytes
+        
+        if [ "$FILE_SIZE" -gt "$MAX_SIZE" ]; then
+          echo "::error::SARIF file exceeds 10MB limit (size: $FILE_SIZE bytes)"
+          exit 1
+        fi
+        
+        echo "SARIF file found: ${{ inputs.sarif-file }} (size: $FILE_SIZE bytes)"
+
+    - name: Install Checkmarx CLI
+      shell: bash
+      run: |
+        echo "Installing Checkmarx CLI..."
+        
+        # Detect OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        
+        case "$ARCH" in
+          x86_64) ARCH="x64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+        
+        # Download appropriate CLI version
+        CLI_VERSION="2.3.29"
+        CLI_URL="https://github.com/Checkmarx/ast-cli/releases/download/${CLI_VERSION}/ast-cli_${CLI_VERSION}_${OS}_${ARCH}.tar.gz"
+        
+        echo "Downloading Checkmarx CLI from: $CLI_URL"
+        curl -L -o cx-cli.tar.gz "$CLI_URL"
+        tar -xzf cx-cli.tar.gz
+        chmod +x cx
+        
+        # Make CLI available in PATH
+        echo "$GITHUB_WORKSPACE" >> $GITHUB_PATH
+        
+        # Verify installation
+        ./cx version
+
+    - name: Authenticate with Checkmarx
+      shell: bash
+      id: auth
+      run: |
+        echo "Authenticating with Checkmarx..."
+        ./cx configure set --prop-name cx_base_uri --prop-value "${{ inputs.base-uri }}"
+        ./cx configure set --prop-name cx_client_id --prop-value "${{ inputs.cx-client-id }}"
+        ./cx configure set --prop-name cx_client_secret --prop-value "${{ inputs.cx-client-secret }}"
+        ./cx configure set --prop-name cx_tenant --prop-value "${{ inputs.cx-tenant }}"
+        
+        # Test authentication
+        if ./cx auth validate; then
+          echo "Authentication successful"
+        else
+          echo "::error::Failed to authenticate with Checkmarx"
+          exit 1
+        fi
+
+    - name: Transform SARIF for Checkmarx compatibility
+      shell: bash
+      run: |
+        echo "Checking SARIF format for Checkmarx compatibility..."
+        
+        # Check if the SARIF has tool.driver.name structure (cargo-audit format)
+        if grep -q '"tool".*"driver".*"name"' "${{ inputs.sarif-file }}"; then
+          echo "Detected cargo-audit SARIF format. Transforming for Checkmarx..."
+          
+          # Create a backup
+          cp "${{ inputs.sarif-file }}" "${{ inputs.sarif-file }}.original"
+          
+          # Transform: Add tool.name at top level (Checkmarx may require this)
+          # Based on investigation: Checkmarx might need tool.name, not just tool.driver.name
+          if command -v jq >/dev/null 2>&1; then
+            jq '.runs |= map(
+              if .tool.driver.name then
+                .tool.name = .tool.driver.name |
+                .tool.version = (.tool.driver.version // "unknown")
+              else . end
+            )' "${{ inputs.sarif-file }}.original" > "${{ inputs.sarif-file }}"
+            echo "SARIF transformed: Added tool.name and tool.version at tool level"
+          else
+            echo "::warning::jq not found, skipping SARIF transformation. Results may not appear in Checkmarx UI."
+          fi
+        else
+          echo "SARIF format appears compatible, proceeding without transformation"
+        fi
+
+    - name: Upload SARIF to Checkmarx
+      shell: bash
+      id: upload
+      run: |
+        echo "Uploading SARIF file to Checkmarx..."
+        echo "Project: ${{ inputs.project-name }}"
+        echo "Branch: ${{ inputs.branch }}"
+        echo "SARIF file: ${{ inputs.sarif-file }}"
+
+        # Prepare the import command
+        IMPORT_CMD="./cx utils import"
+        IMPORT_CMD="$IMPORT_CMD --project-name \"${{ inputs.project-name }}\""
+        IMPORT_CMD="$IMPORT_CMD --import-file-path \"${{ inputs.sarif-file }}\""
+        # below shouldn't be needed as already authed above.
+        # IMPORT_CMD="$IMPORT_CMD --base-uri \"${{ inputs.base-uri }}\""
+        # IMPORT_CMD="$IMPORT_CMD --client-id \"${{ inputs.cx-client-id }}\""
+        # IMPORT_CMD="$IMPORT_CMD --client-secret \"${{ inputs.cx-client-secret }}\""
+        # IMPORT_CMD="$IMPORT_CMD --tenant \"${{ inputs.cx-tenant }}\""
+
+        # Add any additional parameters
+        if [ -n "${{ inputs.additional-params }}" ]; then
+          IMPORT_CMD="$IMPORT_CMD ${{ inputs.additional-params }}"
+        fi
+
+        # Execute the import
+        echo "Executing: cx utils import [credentials hidden]"
+        if eval "$IMPORT_CMD"; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "::notice::SARIF file successfully uploaded to Checkmarx"
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "::error::Failed to upload SARIF file to Checkmarx"
+          exit 1
+        fi
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        # Clear stored credentials
+        ./cx configure clear || true
+
+        # Clean up CLI installation files
+        rm -f cx-cli.tar.gz cx LICENSE README.md
