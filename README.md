@@ -29,7 +29,7 @@ Use this to replace the entire Checkmarx workflow - it performs a full scan and 
 
 ## Usage
 
-> **Note for Private Repository**: If this action repository is private, you'll need to check it out first before using it. See the examples below for the workaround. Once the repository is made public, the simpler syntax can be used.
+> **Note for Private Repository**: While this repository is private, you must check it out first before using it. The composite action internally references the BYOR action, so both need to be available in the workspace. See the examples below for the required setup. Once the repository is made public, the simpler syntax can be used.
 
 ### SARIF Upload Action - Basic Example
 
