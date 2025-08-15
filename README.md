@@ -38,7 +38,7 @@ Use this to replace the entire Checkmarx workflow - it performs a full scan and 
   run: cargo audit --format sarif > scan.sarif || true
 
 - name: Upload SARIF to Checkmarx
-  uses: midnightntwrk/upload-sarif-github-action@v1
+  uses: midnightntwrk/upload-sarif-github-action@main
   with:
     sarif-file: scan.sarif
     project-name: ${{ github.event.repository.name }}
@@ -78,7 +78,7 @@ jobs:
       #     repository: midnightntwrk/upload-sarif-github-action
       #     ref: main
       #     path: upload-sarif-github-action
-      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     token: ${{ secrets.MIDNIGHTCI_REPO }}
       
       - name: Checkmarx Full Scan
         uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan@main
@@ -119,7 +119,7 @@ jobs:
           sarif_file: scan.sarif
       
       - name: Upload SARIF to Checkmarx
-        uses: midnightntwrk/upload-sarif-github-action@v1
+        uses: midnightntwrk/upload-sarif-github-action@main
         with:
           sarif-file: scan.sarif
           project-name: ${{ github.event.repository.name }}
@@ -182,8 +182,9 @@ Add these secrets to your repository:
 - `CX_CLIENT_ID` - Your Checkmarx OAuth2 client ID
 - `CX_CLIENT_SECRET_EU` - Your Checkmarx OAuth2 client secret (EU region)
 - `CX_TENANT` - Your Checkmarx tenant name
+- `MIDNIGHTCI_REPO` - GitHub token for SCS scanning (used by Full Scan action)
 
-These are the same secrets used by the standard Checkmarx scanning action.
+The first three are the same secrets used by the standard Checkmarx scanning action.
 
 ## Supported Tools
 
