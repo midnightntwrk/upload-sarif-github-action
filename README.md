@@ -29,6 +29,8 @@ Use this to replace the entire Checkmarx workflow - it performs a full scan and 
 
 ## Usage
 
+> **Note for Private Repository**: If this action repository is private, you'll need to check it out first before using it. See the examples below for the workaround. Once the repository is made public, the simpler syntax can be used.
+
 ### SARIF Upload Action - Basic Example
 
 ```yaml
@@ -36,7 +38,7 @@ Use this to replace the entire Checkmarx workflow - it performs a full scan and 
   run: cargo audit --format sarif > scan.sarif || true
 
 - name: Upload SARIF to Checkmarx
-  uses: midnight-ntwrk/upload-sarif-github-action@v1
+  uses: midnightntwrk/upload-sarif-github-action@main
   with:
     sarif-file: scan.sarif
     project-name: ${{ github.event.repository.name }}
@@ -69,8 +71,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      # If this repo is private, add this checkout step:
+      # - name: Checkout Upload action repository
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: midnightntwrk/upload-sarif-github-action
+      #     ref: main
+      #     path: upload-sarif-github-action
+      #     token: ${{ secrets.MIDNIGHTCI_REPO }}
+      
       - name: Checkmarx Full Scan
-        uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan@v1
+        uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan@main
+        # If private repo, use: ./upload-sarif-github-action/checkmarx-scan
         with:
           cx-client-id: ${{ secrets.CX_CLIENT_ID }}
           cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
@@ -107,7 +119,7 @@ jobs:
           sarif_file: scan.sarif
       
       - name: Upload SARIF to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        uses: midnightntwrk/upload-sarif-github-action@main
         with:
           sarif-file: scan.sarif
           project-name: ${{ github.event.repository.name }}
@@ -170,8 +182,9 @@ Add these secrets to your repository:
 - `CX_CLIENT_ID` - Your Checkmarx OAuth2 client ID
 - `CX_CLIENT_SECRET_EU` - Your Checkmarx OAuth2 client secret (EU region)
 - `CX_TENANT` - Your Checkmarx tenant name
+- `MIDNIGHTCI_REPO` - GitHub token for SCS scanning (used by Full Scan action)
 
-These are the same secrets used by the standard Checkmarx scanning action.
+The first three are the same secrets used by the standard Checkmarx scanning action.
 
 ## Supported Tools
 
@@ -254,11 +267,6 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 ## Credits
 
 Created by the Midnight security team to enhance Rust security visibility in Checkmarx.
-
-Based on requirements from:
-- **Sponsor**: Giles Cope
-- **Implementation**: Sean Kwak
-- **JIRA**: PM-18735
 
 Special thanks to the Rust security ecosystem, particularly the `cargo-audit` team for SARIF support.
 
