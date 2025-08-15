@@ -136,8 +136,8 @@ runs:
     - name: Upload SARIF to Checkmarx BYOR
       if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
       # Note: This references the BYOR action from the same repo
-      # Will work correctly once merged to main
-      uses: midnightntwrk/upload-sarif-github-action@main
+      # Using relative path since we're in the same repo
+      uses: ../
       with:
         sarif-file: cx_result.sarif
         project-name: ${{ inputs.project-name }}
