@@ -1,6 +1,9 @@
-# Upload SARIF to Checkmarx GitHub Action
+# Checkmarx GitHub Actions
 
-A GitHub Action that uploads SARIF (Static Analysis Results Interchange Format) files to Checkmarx using their BYOR (Bring Your Own Results) feature. This enables security vulnerabilities from tools like `cargo-audit` to be visible in Checkmarx dashboards.
+This repository provides two GitHub Actions for Checkmarx integration:
+
+1. **SARIF Upload Action** (`action.yml`) - Uploads SARIF files to Checkmarx via BYOR (Bring Your Own Results)
+2. **Full Scan Action** (`checkmarx-scan/action.yml`) - Complete Checkmarx scan with automatic SARIF upload to both GitHub Security and Checkmarx
 
 ## Purpose
 
@@ -14,9 +17,19 @@ Checkmarx has limited native support for Rust security scanning. This action bri
 - Simple, focused implementation
 - Reusable across all Midnight repositories
 
+## Actions Overview
+
+### 1. SARIF Upload Action (BYOR Only)
+
+Use this when you have existing SARIF files (e.g., from cargo-audit) that you want to upload to Checkmarx.
+
+### 2. Full Scan Action (Complete Checkmarx Workflow)
+
+Use this to replace the entire Checkmarx workflow - it performs a full scan and uploads results to both GitHub Security and Checkmarx.
+
 ## Usage
 
-### Basic Example
+### SARIF Upload Action - Basic Example
 
 ```yaml
 - name: Run cargo audit
@@ -32,7 +45,40 @@ Checkmarx has limited native support for Rust security scanning. This action bri
     cx-tenant: ${{ secrets.CX_TENANT }}
 ```
 
-### Complete Workflow Example
+### Full Scan Action - Example
+
+This replaces the entire checkmarx.yaml workflow:
+
+```yaml
+name: Checkmarx Security Scan
+
+on:
+  pull_request:
+    branches: [ '**' ]
+  push:
+    branches: [ 'main' ]
+
+jobs:
+  checkmarx-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Checkmarx Full Scan
+        uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan@v1
+        with:
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+          scs-repo-token: ${{ secrets.MIDNIGHTCI_REPO }}
+```
+
+### Complete Workflow Example (SARIF Upload Only)
 
 ```yaml
 name: Security Scan
@@ -72,6 +118,8 @@ jobs:
 
 ## Inputs
 
+### SARIF Upload Action Inputs
+
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `sarif-file` | Path to SARIF file to upload | **Yes** | - |
@@ -82,6 +130,20 @@ jobs:
 | `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
 | `branch` | Branch name (for future multi-branch support) | No | Current branch |
 | `additional-params` | Additional CLI parameters for cx utils import | No | - |
+
+### Full Scan Action Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `project-name` | Checkmarx project name | No | Repository name |
+| `cx-client-id` | Checkmarx OAuth2 client ID | **Yes** | - |
+| `cx-client-secret` | Checkmarx OAuth2 client secret | **Yes** | - |
+| `cx-tenant` | Checkmarx tenant | **Yes** | - |
+| `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
+| `scs-repo-token` | GitHub token for SCS scanning | **Yes** | - |
+| `additional-params` | Additional parameters for scan | No | - |
+| `upload-to-github` | Upload to GitHub Security | No | `true` (auto-disabled for private repos) |
+| `upload-to-checkmarx` | Upload to Checkmarx BYOR | No | `true` |
 
 ## Outputs
 
