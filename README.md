@@ -267,11 +267,6 @@ Apache 2.0 - See [LICENSE](LICENSE) for details.
 
 Created by the Midnight security team to enhance Rust security visibility in Checkmarx.
 
-Based on requirements from:
-- **Sponsor**: Giles Cope
-- **Implementation**: Sean Kwak
-- **JIRA**: PM-18735
-
 Special thanks to the Rust security ecosystem, particularly the `cargo-audit` team for SARIF support.
 
 ## Support
