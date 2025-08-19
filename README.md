@@ -69,11 +69,11 @@ jobs:
       security-events: write
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       
       # If this repo is private, add this checkout step:
       # - name: Checkout Upload action repository
-      #   uses: actions/checkout@v4
+      #   uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       #   with:
       #     repository: midnightntwrk/upload-sarif-github-action
       #     ref: main
@@ -105,7 +105,7 @@ jobs:
   rust-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       
       - name: Install cargo-audit
         run: cargo install cargo-audit
