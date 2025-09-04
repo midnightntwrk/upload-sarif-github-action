@@ -122,13 +122,19 @@ runs:
           mv ./cx_result.sarif ./cx_result.sarif.orig
           jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif
           echo "Fixed empty artifactLocation URIs in SARIF file"
+          
+          # Fix missing message text that causes newer codeql-action versions to fail
+          mv ./cx_result.sarif ./cx_result.sarif.tmp
+          jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' cx_result.sarif.tmp > cx_result.sarif
+          rm -f cx_result.sarif.tmp cx_result.sarif.orig
+          echo "Fixed missing message text in SARIF file"
         else
           echo "::warning::No SARIF file generated from Checkmarx scan"
         fi
 
     - name: Upload SARIF to GitHub Security
       if: ${{ inputs.upload-to-github == 'true' && github.event.repository.private == false }}
-      uses: github/codeql-action/upload-sarif@4e20239e7b23c6078c563635c41d109adaaa1f72  # v3.29.2
+      uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
       with:
         sarif_file: cx_result.sarif
       continue-on-error: true
