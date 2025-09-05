@@ -59,7 +59,7 @@ jobs:
           output: 'trivy.sarif'
       
       - name: Upload Trivy results to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373. #v1
+        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: trivy.sarif
           project-name: ${{ github.event.repository.name }}-container
