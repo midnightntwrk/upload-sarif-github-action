@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
       
       - name: Run cargo-audit
         run: |
@@ -27,7 +27,7 @@ jobs:
           cargo audit --format sarif > rust-audit.sarif || true
       
       - name: Upload Rust audit to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: rust-audit.sarif
           project-name: ${{ github.event.repository.name }}-rust
@@ -36,7 +36,8 @@ jobs:
           cx-tenant: ${{ secrets.CX_TENANT }}
       
       - name: Save SARIF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@de65e23aa2b7e23d713bb51fbfcb6d502f8667d8  #v4
+
         with:
           name: rust-audit-sarif
           path: rust-audit.sarif
@@ -50,7 +51,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       
       - name: Run Trivy container scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -58,7 +59,7 @@ jobs:
           output: 'trivy.sarif'
       
       - name: Upload Trivy results to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373. #v1
         with:
           sarif-file: trivy.sarif
           project-name: ${{ github.event.repository.name }}-container
@@ -67,7 +68,7 @@ jobs:
           cx-tenant: ${{ secrets.CX_TENANT }}
       
       - name: Save SARIF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@de65e23aa2b7e23d713bb51fbfcb6d502f8667d8  #v4
         with:
           name: trivy-sarif
           path: trivy.sarif
@@ -81,13 +82,14 @@ jobs:
       
       - name: Run Semgrep
         id: semgrep
-        uses: returntocorp/semgrep-action@v1
+        # TODO: this action is deprecated.
+        uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d
         with:
           generateSarif: true
       
       - name: Upload Semgrep results to Checkmarx
         if: always() && steps.semgrep.outputs.sarif != ''
-        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: semgrep.sarif
           project-name: ${{ github.event.repository.name }}-sast
@@ -103,20 +105,20 @@ jobs:
     
     steps:
       - name: Download all SARIF artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@abefc31eafcfbdf6c5336127c1346fdae79ff41c  #v4
         with:
           pattern: '*-sarif'
       
       - name: Upload Rust audit SARIF to GitHub
         if: hashFiles('rust-audit-sarif/rust-audit.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@02ab253bd299d261d00cdf8a9bca38fea2697d50  # v3.29.2
         with:
           sarif_file: rust-audit-sarif/rust-audit.sarif
           category: rust-audit
       
       - name: Upload Trivy SARIF to GitHub
         if: hashFiles('trivy-sarif/trivy.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@02ab253bd299d261d00cdf8a9bca38fea2697d50  # v3.29.2
         with:
           sarif_file: trivy-sarif/trivy.sarif
           category: container-scan
