@@ -114,12 +114,12 @@ jobs:
         run: cargo audit --format sarif > scan.sarif || true
       
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@02ab253bd299d261d00cdf8a9bca38fea2697d50  # v3.29.2
         with:
           sarif_file: scan.sarif
       
       - name: Upload SARIF to Checkmarx
-        uses: midnightntwrk/upload-sarif-github-action@main
+        uses: midnightntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373
         with:
           sarif-file: scan.sarif
           project-name: ${{ github.event.repository.name }}

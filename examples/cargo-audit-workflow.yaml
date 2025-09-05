@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
       
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
       
       - name: Install cargo-audit
         run: cargo install cargo-audit
@@ -36,13 +36,13 @@ jobs:
           echo "Cargo audit completed. SARIF file size: $(stat -c%s cargo-audit.sarif) bytes"
       
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@16df4fbc19aea13d921737861d6c622bf3cefe23  #v3
         with:
           sarif_file: cargo-audit.sarif
           category: cargo-audit
       
       - name: Upload SARIF to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@v1
+        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373. #v1
         with:
           sarif-file: cargo-audit.sarif
           project-name: ${{ github.event.repository.name }}
@@ -51,7 +51,7 @@ jobs:
           cx-tenant: ${{ secrets.CX_TENANT }}
       
       - name: Upload SARIF as artifact (optional)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@de65e23aa2b7e23d713bb51fbfcb6d502f8667d8  #v4
         with:
           name: cargo-audit-sarif
           path: cargo-audit.sarif
