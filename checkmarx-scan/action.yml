@@ -50,43 +50,17 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Install dependencies
+    - name: Scrape Checkmarx status
       shell: bash
       run: |
-        python3 -m pip install --upgrade pip
-        python3 -m pip install beautifulsoup4 requests
-
-    - name: Check Checkmarx EU2 status
-      shell: bash
-      run: |
-        cat <<'EOF' > /tmp/check_cx_status.py
-        import requests
-        from bs4 import BeautifulSoup
-        
         # URL of the status page
-        url = "https://eu2-status.ast.checkmarx.net/"
-        
-        try:
-            # Send a GET request to fetch the HTML content
-            response = requests.get(url)
-            response.raise_for_status()  # Check for request errors
-            
-            # Parse the HTML content
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Locate the status element based on its HTML structure
-            status_element = soup.find('aside', class_='operational state-bar')
-            
-            # Check if the status is operational
-            if status_element and 'Operating Normally' in status_element.text:
-                print("The status is operational with status")
-                print(status_element.text)
-            else:
-                print("The status is not operational.")
-        except requests.exceptions.RequestException as e:
-            print(f"An error occurred: {e}")
-        EOF
-        python3 /tmp/check_cx_status.py
+        url="https://eu2-status.ast.checkmarx.net/"
+        html=$(curl -s "$url")
+
+        if echo "$html" | grep -q "Operating Normally"; then
+          echo "Checkmarx is having issues. Proceeding without breaking the build."
+          exit 0  # Do not fail the build
+        fi
 
     - name: Check Checkmarx server health
       shell: bash
