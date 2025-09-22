@@ -50,27 +50,32 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Scrape Checkmarx status
+    - name: Check Checkmarx EU2 status
       shell: bash
       run: |
-        # URL of the status page
+        # URL of the EU2 status page
         url="https://eu2-status.ast.checkmarx.net/"
         html=$(curl -s "$url")
 
         if echo "$html" | grep -q "Operating Normally"; then
-          echo "Checkmarx is having issues. Proceeding without breaking the build."
+          echo "✅ Checkmarx EU2 status: Operating Normally"
+        else
+          echo "⚠️ Checkmarx EU2 may be experiencing issues"
+          echo "Status page: $url"
+          echo "Proceeding without breaking the build"
           exit 0  # Do not fail the build
         fi
 
-    - name: Check Checkmarx server health
+    - name: Check Checkmarx IND server health
       shell: bash
       run: |
         response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/)
-        if [ "$response" != "200" ]; then
-          echo "Checkmarx One server is down. Proceeding without breaking the build."
-          exit 0  # Do not fail the build
+        if [ "$response" = "200" ]; then
+          echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
         else
-          echo "Checkmarx One server is healthy. Proceeding with scan."
+          echo "⚠️ Checkmarx IND server returned: HTTP $response"
+          echo "Proceeding without breaking the build"
+          exit 0  # Do not fail the build
         fi
 
     - name: Run Checkmarx scan
