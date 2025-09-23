@@ -1,0 +1,195 @@
+name: 'Actionlint - GitHub Actions Workflow Linter'
+description: 'Static checker for GitHub Actions workflow files'
+author: 'Midnight'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  fail-on-error:
+    description: 'Whether to fail the action if errors are found'
+    required: false
+    default: 'true'
+  shellcheck:
+    description: 'Enable shellcheck for shell scripts in workflows'
+    required: false
+    default: 'true'
+  pyflakes:
+    description: 'Enable pyflakes for Python scripts in workflows'
+    required: false
+    default: 'true'
+  config-file:
+    description: 'Path to actionlint configuration file'
+    required: false
+    default: ''
+  annotations:
+    description: 'Enable GitHub annotations for errors'
+    required: false
+    default: 'true'
+  workflow-files:
+    description: 'Specific workflow files to check (defaults to all)'
+    required: false
+    default: '.github/workflows/*.yml .github/workflows/*.yaml'
+
+outputs:
+  errors-found:
+    description: 'Whether any errors were found'
+    value: ${{ steps.lint.outputs.errors-found }}
+  error-count:
+    description: 'Number of errors found'
+    value: ${{ steps.lint.outputs.error-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download actionlint
+      shell: bash
+      id: download
+      run: |
+        echo "Downloading actionlint..."
+
+        # Detect OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        case "$ARCH" in
+          x86_64) ARCH="amd64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          i386|i686) ARCH="386" ;;
+          armv6l|armv7l) ARCH="armv7" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        # Get latest version
+        VERSION=$(curl -s https://api.github.com/repos/rhysd/actionlint/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/v//')
+        echo "Latest actionlint version: $VERSION"
+
+        # Download URL
+        URL="https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_${OS}_${ARCH}.tar.gz"
+        echo "Download URL: $URL"
+
+        # Download and extract
+        curl -L -o actionlint.tar.gz "$URL"
+        tar -xzf actionlint.tar.gz actionlint
+        chmod +x actionlint
+
+        # Make available
+        echo "executable=$PWD/actionlint" >> $GITHUB_OUTPUT
+
+        # Show version
+        ./actionlint -version
+
+    - name: Install shellcheck (if enabled)
+      if: ${{ inputs.shellcheck == 'true' }}
+      shell: bash
+      run: |
+        if ! command -v shellcheck &> /dev/null; then
+          echo "Installing shellcheck..."
+          if [ "$(uname -s)" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          elif [ "$(uname -s)" = "Darwin" ]; then
+            if command -v brew &> /dev/null; then
+              brew install shellcheck
+            else
+              echo "::warning::Shellcheck not available, skipping shell script checks"
+            fi
+          fi
+        else
+          echo "Shellcheck already installed: $(shellcheck --version | head -1)"
+        fi
+
+    - name: Install pyflakes (if enabled)
+      if: ${{ inputs.pyflakes == 'true' }}
+      shell: bash
+      run: |
+        if ! command -v pyflakes &> /dev/null; then
+          echo "Installing pyflakes..."
+          if command -v pip3 &> /dev/null; then
+            pip3 install --user pyflakes
+          elif command -v pip &> /dev/null; then
+            pip install --user pyflakes
+          else
+            echo "::warning::Pyflakes not available, skipping Python script checks"
+          fi
+        else
+          echo "Pyflakes already installed"
+        fi
+
+    - name: Run actionlint
+      id: lint
+      shell: bash
+      run: |
+        echo "=== Running actionlint ==="
+        echo "Checking workflow files: ${{ inputs.workflow-files }}"
+
+        # Build command
+        LINT_CMD="${{ steps.download.outputs.executable }}"
+
+        # Add config file if specified
+        if [ -n "${{ inputs.config-file }}" ] && [ -f "${{ inputs.config-file }}" ]; then
+          echo "Using config file: ${{ inputs.config-file }}"
+          LINT_CMD="$LINT_CMD -config-file ${{ inputs.config-file }}"
+        fi
+
+        # Disable shellcheck if not enabled
+        if [ "${{ inputs.shellcheck }}" != "true" ]; then
+          LINT_CMD="$LINT_CMD -shellcheck="
+        fi
+
+        # Disable pyflakes if not enabled
+        if [ "${{ inputs.pyflakes }}" != "true" ]; then
+          LINT_CMD="$LINT_CMD -pyflakes="
+        fi
+
+        # Add color output for better readability
+        LINT_CMD="$LINT_CMD -color"
+
+        # Add workflow files pattern
+        LINT_CMD="$LINT_CMD ${{ inputs.workflow-files }}"
+
+        # Run actionlint and capture output
+        set +e
+        OUTPUT=$($LINT_CMD 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        # Display output
+        echo "$OUTPUT"
+
+        # Count errors
+        ERROR_COUNT=$(echo "$OUTPUT" | grep -c "^[^:]*:[0-9]*:[0-9]*:" || true)
+        echo "error-count=$ERROR_COUNT" >> $GITHUB_OUTPUT
+
+        # Set errors-found output
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "errors-found=true" >> $GITHUB_OUTPUT
+          echo "::error::Found $ERROR_COUNT workflow error(s)"
+
+          # Create annotations if enabled
+          if [ "${{ inputs.annotations }}" = "true" ] && [ -n "$OUTPUT" ]; then
+            echo "$OUTPUT" | while IFS= read -r line; do
+              if echo "$line" | grep -q "^[^:]*:[0-9]*:[0-9]*:"; then
+                FILE=$(echo "$line" | cut -d: -f1)
+                LINE=$(echo "$line" | cut -d: -f2)
+                COL=$(echo "$line" | cut -d: -f3)
+                MSG=$(echo "$line" | cut -d: -f4-)
+                echo "::error file=$FILE,line=$LINE,col=$COL::$MSG"
+              fi
+            done
+          fi
+
+          # Fail if configured to do so
+          if [ "${{ inputs.fail-on-error }}" = "true" ]; then
+            exit 1
+          fi
+        else
+          echo "errors-found=false" >> $GITHUB_OUTPUT
+          echo "✅ No workflow errors found!"
+        fi
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        rm -f actionlint actionlint.tar.gz || true
+        echo "✅ Cleanup completed"
