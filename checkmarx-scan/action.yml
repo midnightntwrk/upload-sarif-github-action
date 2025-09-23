@@ -62,8 +62,8 @@ runs:
         else
           echo "⚠️ Checkmarx EU2 may be experiencing issues"
           echo "Status page: $url"
-          echo "Proceeding without breaking the build"
-          # No exit - let the action continue to the actual scan
+          echo "Setting SKIP_CHECKMARX flag to skip scan"
+          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
         fi
 
     - name: Check Checkmarx IND server health
@@ -74,12 +74,20 @@ runs:
           echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
         else
           echo "⚠️ Checkmarx IND server returned: HTTP $response"
-          echo "Proceeding without breaking the build"
-          # No exit - let the action continue to the actual scan
+          echo "Setting SKIP_CHECKMARX flag to skip scan"
+          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
         fi
+
+    - name: Notify if skipping Checkmarx
+      if: env.SKIP_CHECKMARX == 'true'
+      shell: bash
+      run: |
+        echo "::warning::Skipping Checkmarx scan due to service unavailability"
+        echo "ℹ️ Build will continue without security scanning to avoid blocking development"
 
     - name: Run Checkmarx scan
       id: checkmarx-scan
+      if: env.SKIP_CHECKMARX != 'true'
       uses: checkmarx/ast-github-action@fa338ce82069b297c4852ac77e2d168db9fb56d8 #2.3.21
       with:
         cx_tenant: ${{ inputs.cx-tenant }}
@@ -93,6 +101,7 @@ runs:
           ${{ inputs.additional-params }}
 
     - name: Fix SARIF for GitHub upload
+      if: env.SKIP_CHECKMARX != 'true'
       shell: bash
       run: |
         # GitHub fails if artifactLocation.uri is empty
@@ -112,14 +121,14 @@ runs:
         fi
 
     - name: Upload SARIF to GitHub Security
-      if: ${{ inputs.upload-to-github == 'true' && github.event.repository.private == false }}
+      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-github == 'true' && github.event.repository.private == false }}
       uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
       with:
         sarif_file: cx_result.sarif
       continue-on-error: true
 
     - name: Upload SARIF to Checkmarx BYOR
-      if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
+      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
       # Note: When repo is private, this requires checking out the action first
       # Once public, can use: midnightntwrk/upload-sarif-github-action@main
       uses: ./upload-sarif-github-action
