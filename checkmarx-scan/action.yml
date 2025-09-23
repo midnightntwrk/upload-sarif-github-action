@@ -50,31 +50,44 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Scrape Checkmarx status
+    - name: Check Checkmarx EU2 status
       shell: bash
       run: |
-        # URL of the status page
+        # URL of the EU2 status page
         url="https://eu2-status.ast.checkmarx.net/"
         html=$(curl -s "$url")
 
         if echo "$html" | grep -q "Operating Normally"; then
-          echo "Checkmarx is having issues. Proceeding without breaking the build."
-          exit 0  # Do not fail the build
+          echo "✅ Checkmarx EU2 status: Operating Normally"
+        else
+          echo "⚠️ Checkmarx EU2 may be experiencing issues"
+          echo "Status page: $url"
+          echo "Setting SKIP_CHECKMARX flag to skip scan"
+          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
         fi
 
-    - name: Check Checkmarx server health
+    - name: Check Checkmarx IND server health
       shell: bash
       run: |
         response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/)
-        if [ "$response" != "200" ]; then
-          echo "Checkmarx One server is down. Proceeding without breaking the build."
-          exit 0  # Do not fail the build
+        if [ "$response" = "200" ]; then
+          echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
         else
-          echo "Checkmarx One server is healthy. Proceeding with scan."
+          echo "⚠️ Checkmarx IND server returned: HTTP $response"
+          echo "Setting SKIP_CHECKMARX flag to skip scan"
+          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
         fi
+
+    - name: Notify if skipping Checkmarx
+      if: env.SKIP_CHECKMARX == 'true'
+      shell: bash
+      run: |
+        echo "::warning::Skipping Checkmarx scan due to service unavailability"
+        echo "ℹ️ Build will continue without security scanning to avoid blocking development"
 
     - name: Run Checkmarx scan
       id: checkmarx-scan
+      if: env.SKIP_CHECKMARX != 'true'
       uses: checkmarx/ast-github-action@fa338ce82069b297c4852ac77e2d168db9fb56d8 #2.3.21
       with:
         cx_tenant: ${{ inputs.cx-tenant }}
@@ -88,6 +101,7 @@ runs:
           ${{ inputs.additional-params }}
 
     - name: Fix SARIF for GitHub upload
+      if: env.SKIP_CHECKMARX != 'true'
       shell: bash
       run: |
         # GitHub fails if artifactLocation.uri is empty
@@ -107,14 +121,14 @@ runs:
         fi
 
     - name: Upload SARIF to GitHub Security
-      if: ${{ inputs.upload-to-github == 'true' && github.event.repository.private == false }}
+      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-github == 'true' && github.event.repository.private == false }}
       uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
       with:
         sarif_file: cx_result.sarif
       continue-on-error: true
 
     - name: Upload SARIF to Checkmarx BYOR
-      if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
+      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
       # Note: When repo is private, this requires checking out the action first
       # Once public, can use: midnightntwrk/upload-sarif-github-action@main
       uses: ./upload-sarif-github-action
