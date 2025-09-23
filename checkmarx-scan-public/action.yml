@@ -60,6 +60,7 @@ runs:
         echo "Repository: ${{ inputs.repo-url }}"
         echo "Branch: ${{ inputs.branch }}"
         echo "Project: ${{ inputs.project-name }}"
+        echo "Scan Types: SAST, SCA, KICS (IaC Security)"
         echo "Note: No code checkout - Checkmarx will fetch directly"
 
     - name: Install Checkmarx CLI
@@ -119,6 +120,7 @@ runs:
         SCAN_CMD="$SCAN_CMD --project-name \"${{ inputs.project-name }}\""
         SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
         SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
+        SCAN_CMD="$SCAN_CMD --scan-types sast,sca,kics"
         SCAN_CMD="$SCAN_CMD --report-format sarif"
         SCAN_CMD="$SCAN_CMD --output-path ."
 
