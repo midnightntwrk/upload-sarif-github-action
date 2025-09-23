@@ -63,7 +63,7 @@ runs:
           echo "⚠️ Checkmarx EU2 may be experiencing issues"
           echo "Status page: $url"
           echo "Proceeding without breaking the build"
-          exit 0  # Do not fail the build
+          # No exit - let the action continue to the actual scan
         fi
 
     - name: Check Checkmarx IND server health
@@ -75,7 +75,7 @@ runs:
         else
           echo "⚠️ Checkmarx IND server returned: HTTP $response"
           echo "Proceeding without breaking the build"
-          exit 0  # Do not fail the build
+          # No exit - let the action continue to the actual scan
         fi
 
     - name: Run Checkmarx scan
