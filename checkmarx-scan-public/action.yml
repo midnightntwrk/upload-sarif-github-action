@@ -65,7 +65,8 @@ runs:
     - name: Install Checkmarx CLI
       shell: bash
       run: |
-        echo "Installing Checkmarx CLI v2.3.35..."
+        CLI_VERSION="2.3.35"
+        echo "Installing Checkmarx CLI ${CLI_VERSION}..."
 
         # Detect OS and architecture
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -78,7 +79,6 @@ runs:
         esac
 
         # Download CLI
-        CLI_VERSION="2.3.35"
         CLI_URL="https://github.com/Checkmarx/ast-cli/releases/download/${CLI_VERSION}/ast-cli_${CLI_VERSION}_${OS}_${ARCH}.tar.gz"
 
         echo "Downloading from: $CLI_URL"
