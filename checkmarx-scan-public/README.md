@@ -71,6 +71,7 @@ jobs:
 | `branch` | No | Auto-detected from PR | Branch to scan |
 | `additional-params` | No | - | Additional CLI parameters |
 | `upload-to-github` | No | `true` | Upload SARIF to GitHub Security |
+| `scs-repo-token` | No | `github.token` for public repos | GitHub token for SCS/Scorecard scanning |
 
 ## Security Model
 
