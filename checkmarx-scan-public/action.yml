@@ -134,11 +134,11 @@ runs:
         # Add SCS parameters if token is provided
         if [ -n "${{ inputs.scs-repo-token }}" ]; then
           echo "Adding SCS parameters..."
-          SCAN_CMD="$SCAN_CMD --scs-repo-url https://github.com/${{ github.repository }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
           SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ inputs.scs-repo-token }}"
         elif [ -n "${{ github.token }}" ]; then
           echo "Using GitHub token for SCS..."
-          SCAN_CMD="$SCAN_CMD --scs-repo-url https://github.com/${{ github.repository }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
           SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ github.token }}"
         fi
 
