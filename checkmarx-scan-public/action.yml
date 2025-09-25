@@ -1,0 +1,217 @@
+name: 'Checkmarx Scan for Public Repos (Fork-Friendly)'
+description: 'Scans public repos without checking out code - safe for fork PRs with pull_request_target'
+author: 'Midnight'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  project-name:
+    description: 'Checkmarx project name'
+    required: true
+    default: ${{ github.repository }}
+  cx-client-id:
+    description: 'Checkmarx OAuth2 client ID'
+    required: true
+  cx-client-secret:
+    description: 'Checkmarx OAuth2 client secret'
+    required: true
+  cx-tenant:
+    description: 'Checkmarx tenant'
+    required: true
+  base-uri:
+    description: 'Checkmarx server URL'
+    required: false
+    default: 'https://eu-2.ast.checkmarx.net/'
+  repo-url:
+    description: 'Repository URL to scan (defaults to PR head repo)'
+    required: false
+    default: ${{ github.event.pull_request.head.repo.html_url || format('https://github.com/{0}', github.repository) }}
+  branch:
+    description: 'Branch to scan (defaults to PR head ref or current branch)'
+    required: false
+    default: ${{ github.event.pull_request.head.ref || github.ref_name }}
+  additional-params:
+    description: 'Additional parameters for Checkmarx scan'
+    required: false
+    default: ''
+  upload-to-github:
+    description: 'Upload SARIF to GitHub Security'
+    required: false
+    default: 'true'
+  scs-repo-token:
+    description: 'GitHub token for SCS scanning (defaults to github.token for public repos)'
+    required: false
+    default: ''
+
+outputs:
+  scan-id:
+    description: 'Checkmarx scan ID'
+    value: ${{ steps.scan.outputs.scan-id }}
+  sarif-file:
+    description: 'Path to generated SARIF file'
+    value: 'cx_result.sarif'
+
+runs:
+  using: 'composite'
+  steps:
+    # NO CHECKOUT - This is critical for security with pull_request_target
+
+    - name: Display scan parameters
+      shell: bash
+      run: |
+        echo "=== Checkmarx Fork-Friendly Scan ==="
+        echo "Repository: ${{ inputs.repo-url }}"
+        echo "Branch: ${{ inputs.branch }}"
+        echo "Project: ${{ inputs.project-name }}"
+        echo "Scan Types: SAST, SCA, KICS (IaC Security)"
+        if [ -n "${{ inputs.scs-repo-token }}" ] || [ -n "${{ github.token }}" ]; then
+          echo "SCS/Scorecard: Enabled"
+        else
+          echo "SCS/Scorecard: Disabled (no token available)"
+        fi
+        echo "Note: No code checkout - Checkmarx will fetch directly"
+
+    - name: Install Checkmarx CLI
+      shell: bash
+      run: |
+        CLI_VERSION="2.3.35"
+        echo "Installing Checkmarx CLI ${CLI_VERSION}..."
+
+        # Detect OS and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+
+        case "$ARCH" in
+          x86_64) ARCH="x64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        # Download CLI
+        CLI_URL="https://github.com/Checkmarx/ast-cli/releases/download/${CLI_VERSION}/ast-cli_${CLI_VERSION}_${OS}_${ARCH}.tar.gz"
+
+        echo "Downloading from: $CLI_URL"
+        curl -L -o cx-cli.tar.gz "$CLI_URL"
+        tar -xzf cx-cli.tar.gz
+        chmod +x cx
+
+        # Verify installation
+        ./cx version
+
+    - name: Authenticate with Checkmarx
+      shell: bash
+      run: |
+        echo "Authenticating with Checkmarx..."
+        ./cx configure set --prop-name cx_base_uri --prop-value "${{ inputs.base-uri }}"
+        ./cx configure set --prop-name cx_client_id --prop-value "${{ inputs.cx-client-id }}"
+        ./cx configure set --prop-name cx_client_secret --prop-value "${{ inputs.cx-client-secret }}"
+        ./cx configure set --prop-name cx_tenant --prop-value "${{ inputs.cx-tenant }}"
+
+        # Test authentication
+        if ./cx auth validate; then
+          echo "✅ Authentication successful"
+        else
+          echo "::error::Failed to authenticate with Checkmarx"
+          exit 1
+        fi
+
+    - name: Run Checkmarx Scan on Remote Repository
+      shell: bash
+      id: scan
+      run: |
+        echo "Scanning remote repository..."
+        echo "URL: ${{ inputs.repo-url }}"
+        echo "Branch: ${{ inputs.branch }}"
+
+        # Build scan command
+        SCAN_CMD="./cx scan create"
+        SCAN_CMD="$SCAN_CMD --project-name \"${{ inputs.project-name }}\""
+        SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
+        SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
+        SCAN_CMD="$SCAN_CMD --scan-types sast,sca,kics"
+
+        # Add SCS parameters if token is provided
+        if [ -n "${{ inputs.scs-repo-token }}" ]; then
+          echo "Adding SCS parameters..."
+          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ inputs.scs-repo-token }}"
+        elif [ -n "${{ github.token }}" ]; then
+          echo "Using GitHub token for SCS..."
+          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ github.token }}"
+        fi
+
+        SCAN_CMD="$SCAN_CMD --report-format sarif"
+        SCAN_CMD="$SCAN_CMD --output-path ."
+
+        # Add any additional parameters
+        if [ -n "${{ inputs.additional-params }}" ]; then
+          SCAN_CMD="$SCAN_CMD ${{ inputs.additional-params }}"
+        fi
+
+        echo "Executing scan (credentials hidden)..."
+        if eval "$SCAN_CMD"; then
+          echo "✅ Scan completed successfully"
+
+          # Find the SARIF file
+          if [ -f "cx_result.sarif" ]; then
+            echo "SARIF file generated: cx_result.sarif"
+            echo "scan-id=success" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::SARIF file not found at expected location"
+            # Try to find any SARIF file
+            find . -name "*.sarif" -type f | head -1
+          fi
+        else
+          echo "::error::Checkmarx scan failed"
+          exit 1
+        fi
+
+    - name: Fix SARIF for GitHub compatibility
+      if: ${{ hashFiles('cx_result.sarif') != '' }}
+      shell: bash
+      run: |
+        # GitHub fails if artifactLocation.uri is empty
+        if [ -f "./cx_result.sarif" ]; then
+          # Install jq if not present
+          if ! command -v jq &> /dev/null; then
+            echo "Installing jq..."
+            if [ "$OS" = "linux" ]; then
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+          fi
+
+          if command -v jq &> /dev/null; then
+            # Fix empty URIs
+            mv ./cx_result.sarif ./cx_result.sarif.orig
+            jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif.tmp
+
+            # Fix missing message text
+            jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' cx_result.sarif.tmp > cx_result.sarif
+            rm -f cx_result.sarif.tmp cx_result.sarif.orig
+
+            echo "✅ Fixed SARIF for GitHub compatibility"
+          else
+            echo "::warning::jq not available, SARIF may have compatibility issues"
+          fi
+        fi
+
+    - name: Upload SARIF to GitHub Security
+      if: ${{ inputs.upload-to-github == 'true' && hashFiles('cx_result.sarif') != '' }}
+      uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
+      with:
+        sarif_file: cx_result.sarif
+      continue-on-error: true
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: |
+        # Clear stored credentials
+        ./cx configure clear || true
+
+        # Clean up CLI installation files
+        rm -f cx-cli.tar.gz cx LICENSE README.md || true
+
+        echo "✅ Cleanup completed"
