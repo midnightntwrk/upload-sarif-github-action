@@ -39,6 +39,10 @@ inputs:
     description: 'Upload SARIF to GitHub Security'
     required: false
     default: 'true'
+  scs-repo-token:
+    description: 'GitHub token for SCS scanning (defaults to github.token for public repos)'
+    required: false
+    default: ''
 
 outputs:
   scan-id:
@@ -61,6 +65,11 @@ runs:
         echo "Branch: ${{ inputs.branch }}"
         echo "Project: ${{ inputs.project-name }}"
         echo "Scan Types: SAST, SCA, KICS (IaC Security)"
+        if [ -n "${{ inputs.scs-repo-token }}" ] || [ -n "${{ github.token }}" ]; then
+          echo "SCS/Scorecard: Enabled"
+        else
+          echo "SCS/Scorecard: Disabled (no token available)"
+        fi
         echo "Note: No code checkout - Checkmarx will fetch directly"
 
     - name: Install Checkmarx CLI
@@ -121,6 +130,18 @@ runs:
         SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
         SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
         SCAN_CMD="$SCAN_CMD --scan-types sast,sca,kics"
+
+        # Add SCS parameters if token is provided
+        if [ -n "${{ inputs.scs-repo-token }}" ]; then
+          echo "Adding SCS parameters..."
+          SCAN_CMD="$SCAN_CMD --scs-repo-url https://github.com/${{ github.repository }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ inputs.scs-repo-token }}"
+        elif [ -n "${{ github.token }}" ]; then
+          echo "Using GitHub token for SCS..."
+          SCAN_CMD="$SCAN_CMD --scs-repo-url https://github.com/${{ github.repository }}"
+          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ github.token }}"
+        fi
+
         SCAN_CMD="$SCAN_CMD --report-format sarif"
         SCAN_CMD="$SCAN_CMD --output-path ."
 
