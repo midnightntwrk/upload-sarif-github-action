@@ -69,10 +69,12 @@ Do you have existing SARIF files (e.g., from cargo-audit)?
 - `pull_request_target` event workflow
 
 **Features:**
+- Full Checkmarx scan (SAST, SCA, KICS, SCS/Scorecard)
 - No code checkout (secure for fork PRs)
 - Remote URL scanning
+- Health checks (skips during outages)
+- Dual upload (GitHub + Checkmarx portal)
 - Works with `pull_request_target` event
-- Fork PRs get secrets access safely
 
 **See:** [checkmarx-scan-public/README.md](checkmarx-scan-public/README.md)
 

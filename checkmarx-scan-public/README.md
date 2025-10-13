@@ -13,6 +13,15 @@ This action works with `pull_request_target` to safely scan fork PRs:
 2. **Remote Scan**: Checkmarx CLI fetches code directly from GitHub using the repo URL
 3. **Secure**: `pull_request_target` provides secret access without running untrusted code
 
+## Features
+
+- Full Checkmarx scanning (SAST, SCA, KICS, SCS/Scorecard)
+- Health checks (skips scan during Checkmarx outages)
+- Automatic SARIF fixing for GitHub compatibility
+- Dual upload: GitHub Security Code Scanning + Checkmarx portal (BYOR)
+- Fork-friendly with `pull_request_target` event
+- No code checkout required (secure for untrusted contributions)
+
 ## Usage
 
 In your public repository's workflow:
@@ -71,6 +80,7 @@ jobs:
 | `branch` | No | Auto-detected from PR | Branch to scan |
 | `additional-params` | No | - | Additional CLI parameters |
 | `upload-to-github` | No | `true` | Upload SARIF to GitHub Security |
+| `upload-to-checkmarx` | No | `true` | Upload SARIF to Checkmarx via BYOR |
 | `scs-repo-token` | No | `github.token` for public repos | GitHub token for SCS/Scorecard scanning |
 
 ## Security Model
@@ -92,15 +102,39 @@ jobs:
 graph LR
     A[Fork PR Created] --> B[pull_request_target triggered]
     B --> C[Workflow has secrets access]
-    C --> D[Action calls Checkmarx CLI]
-    D --> E[CLI fetches code from repo URL]
-    E --> F[Scan runs in Checkmarx cloud]
-    F --> G[Results uploaded to GitHub]
+    C --> D[Health check]
+    D --> E[Action calls Checkmarx CLI]
+    E --> F[CLI fetches code from repo URL]
+    F --> G[Scan runs in Checkmarx cloud]
+    G --> H[Fix SARIF compatibility]
+    H --> I[Upload to GitHub Security]
+    I --> J[Upload to Checkmarx portal BYOR]
 ```
+
+**Key Steps:**
+1. **Health Check** - Verifies Checkmarx services are available
+2. **Remote Scan** - Checkmarx CLI fetches code directly from GitHub
+3. **Fix SARIF** - Fixes empty URIs and missing messages for GitHub compatibility
+4. **Dual Upload** - Results sent to both GitHub Security Code Scanning and Checkmarx portal
 
 ## Troubleshooting
 
-- If scan fails, check Checkmarx server status
+**Scan fails immediately:**
+- Check Checkmarx service health (action will skip if down)
 - Ensure secrets are properly configured
 - Verify the repository is public
-- Check that no checkout step is present before the action
+
+**Results not appearing in Checkmarx portal:**
+- Ensure `upload-to-checkmarx: 'true'` is set (it's the default)
+- Check BYOR permissions in Checkmarx account
+- Verify SARIF file was generated successfully
+
+**Results not in GitHub Security:**
+- Ensure `upload-to-github: 'true'` is set (it's the default)
+- Verify `security-events: write` permission is granted
+- Check workflow logs for upload errors
+
+**Security concerns:**
+- **Never add a checkout step** before this action
+- Ensures untrusted fork code doesn't run with elevated permissions
+- Checkmarx fetches and scans code in their environment
