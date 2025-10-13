@@ -78,6 +78,31 @@ Do you have existing SARIF files (e.g., from cargo-audit)?
 
 **See:** [checkmarx-scan-public/README.md](checkmarx-scan-public/README.md)
 
+## Why Two Scan Actions?
+
+The two scan actions serve different security models and use cases:
+
+| Aspect | checkmarx-scan | checkmarx-scan-public |
+|--------|----------------|----------------------|
+| **Use Case** | Private repos / trusted contributors | Public repos / fork PRs |
+| **GitHub Event** | `pull_request` | `pull_request_target` |
+| **Code Checkout** | ✅ Yes - checks out code locally | ❌ No - remote URL scan only |
+| **Security Model** | All contributors trusted (write access) | Untrusted contributors (fork PRs) |
+| **Fork PR Support** | ❌ Fork PRs can't access secrets | ✅ Works with fork PRs |
+| **Workflow Testing** | ✅ Can test workflow changes in PRs | ❌ Must merge to main first |
+| **Scan Method** | Local checkout + scan | Remote URL fetch + scan |
+| **When to Use** | Testing workflow changes matters | Fork PR security matters |
+
+**Key Insight:** The split exists because of GitHub's security model:
+- `pull_request` = PR context, no secrets for forks, can test workflow changes
+- `pull_request_target` = Base context, has secrets, can't test workflow changes safely
+
+**Both actions provide:**
+- Full Checkmarx scanning (SAST, SCA, KICS, SCS/Scorecard)
+- Health checks (skip during outages)
+- SARIF fixing for GitHub compatibility
+- Dual upload (GitHub Security + Checkmarx portal)
+
 ## Usage
 
 > **Note for Private Repository**: While this repository is private, you must check it out first before using it. The composite action internally references the BYOR action, so both need to be available in the workspace. See the examples below for the required setup. Once the repository is made public, the simpler syntax can be used.
