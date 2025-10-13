@@ -57,7 +57,12 @@ runs:
   steps:
     # NO CHECKOUT - This is critical for security with pull_request_target
 
+    - name: Check Checkmarx service health
+      id: health
+      uses: ./upload-sarif-github-action/shared/health-check
+
     - name: Display scan parameters
+      if: steps.health.outputs.skip-scan != 'true'
       shell: bash
       run: |
         echo "=== Checkmarx Fork-Friendly Scan ==="
@@ -73,6 +78,7 @@ runs:
         echo "Note: No code checkout - Checkmarx will fetch directly"
 
     - name: Install Checkmarx CLI
+      if: steps.health.outputs.skip-scan != 'true'
       shell: bash
       run: |
         CLI_VERSION="2.3.35"
@@ -100,6 +106,7 @@ runs:
         ./cx version
 
     - name: Authenticate with Checkmarx
+      if: steps.health.outputs.skip-scan != 'true'
       shell: bash
       run: |
         echo "Authenticating with Checkmarx..."
@@ -117,6 +124,7 @@ runs:
         fi
 
     - name: Run Checkmarx Scan on Remote Repository
+      if: steps.health.outputs.skip-scan != 'true'
       shell: bash
       id: scan
       run: |
@@ -169,33 +177,10 @@ runs:
         fi
 
     - name: Fix SARIF for GitHub compatibility
-      if: ${{ hashFiles('cx_result.sarif') != '' }}
-      shell: bash
-      run: |
-        # GitHub fails if artifactLocation.uri is empty
-        if [ -f "./cx_result.sarif" ]; then
-          # Install jq if not present
-          if ! command -v jq &> /dev/null; then
-            echo "Installing jq..."
-            if [ "$OS" = "linux" ]; then
-              sudo apt-get update && sudo apt-get install -y jq
-            fi
-          fi
-
-          if command -v jq &> /dev/null; then
-            # Fix empty URIs
-            mv ./cx_result.sarif ./cx_result.sarif.orig
-            jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif.tmp
-
-            # Fix missing message text
-            jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' cx_result.sarif.tmp > cx_result.sarif
-            rm -f cx_result.sarif.tmp cx_result.sarif.orig
-
-            echo "✅ Fixed SARIF for GitHub compatibility"
-          else
-            echo "::warning::jq not available, SARIF may have compatibility issues"
-          fi
-        fi
+      if: steps.health.outputs.skip-scan != 'true' && hashFiles('cx_result.sarif') != ''
+      uses: ./upload-sarif-github-action/shared/fix-sarif
+      with:
+        sarif-file: cx_result.sarif
 
     - name: Upload SARIF to GitHub Security
       if: ${{ inputs.upload-to-github == 'true' && hashFiles('cx_result.sarif') != '' }}

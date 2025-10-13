@@ -50,36 +50,12 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Check Checkmarx EU2 status
-      shell: bash
-      run: |
-        # URL of the EU2 status page
-        url="https://eu2-status.ast.checkmarx.net/"
-        html=$(curl -s "$url")
-
-        if echo "$html" | grep -q "Operating Normally"; then
-          echo "✅ Checkmarx EU2 status: Operating Normally"
-        else
-          echo "⚠️ Checkmarx EU2 may be experiencing issues"
-          echo "Status page: $url"
-          echo "Setting SKIP_CHECKMARX flag to skip scan"
-          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
-        fi
-
-    - name: Check Checkmarx IND server health
-      shell: bash
-      run: |
-        response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/)
-        if [ "$response" = "200" ]; then
-          echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
-        else
-          echo "⚠️ Checkmarx IND server returned: HTTP $response"
-          echo "Setting SKIP_CHECKMARX flag to skip scan"
-          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
-        fi
+    - name: Check Checkmarx service health
+      id: health
+      uses: ./upload-sarif-github-action/shared/health-check
 
     - name: Notify if skipping Checkmarx
-      if: env.SKIP_CHECKMARX == 'true'
+      if: steps.health.outputs.skip-scan == 'true'
       shell: bash
       run: |
         echo "::warning::Skipping Checkmarx scan due to service unavailability"
@@ -102,23 +78,9 @@ runs:
 
     - name: Fix SARIF for GitHub upload
       if: env.SKIP_CHECKMARX != 'true'
-      shell: bash
-      run: |
-        # GitHub fails if artifactLocation.uri is empty
-        # Replace empty URIs with a placeholder file
-        if [ -f "./cx_result.sarif" ]; then
-          mv ./cx_result.sarif ./cx_result.sarif.orig
-          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif
-          echo "Fixed empty artifactLocation URIs in SARIF file"
-          
-          # Fix missing message text that causes newer codeql-action versions to fail
-          mv ./cx_result.sarif ./cx_result.sarif.tmp
-          jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' cx_result.sarif.tmp > cx_result.sarif
-          rm -f cx_result.sarif.tmp cx_result.sarif.orig
-          echo "Fixed missing message text in SARIF file"
-        else
-          echo "::warning::No SARIF file generated from Checkmarx scan"
-        fi
+      uses: ./upload-sarif-github-action/shared/fix-sarif
+      with:
+        sarif-file: cx_result.sarif
 
     - name: Upload SARIF to GitHub Security
       if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-github == 'true' && github.event.repository.private == false }}

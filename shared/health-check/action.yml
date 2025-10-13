@@ -1,0 +1,61 @@
+name: 'Checkmarx Service Health Check'
+description: 'Checks Checkmarx service availability to avoid blocking builds during outages'
+author: 'Midnight'
+branding:
+  icon: 'activity'
+  color: 'green'
+
+outputs:
+  healthy:
+    description: 'Whether Checkmarx services are healthy (true/false)'
+    value: ${{ steps.check.outputs.healthy }}
+  skip-scan:
+    description: 'Whether to skip Checkmarx scan due to service issues (true/false)'
+    value: ${{ steps.check.outputs.skip-scan }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check Checkmarx service health
+      id: check
+      shell: bash
+      run: |
+        SKIP_SCAN=false
+
+        # Check EU2 status page
+        echo "Checking Checkmarx EU2 status..."
+        eu2_url="https://eu2-status.ast.checkmarx.net/"
+        eu2_html=$(curl -s "$eu2_url" || echo "")
+
+        if echo "$eu2_html" | grep -q "Operating Normally"; then
+          echo "✅ Checkmarx EU2 status: Operating Normally"
+        else
+          echo "⚠️  Checkmarx EU2 may be experiencing issues"
+          echo "Status page: $eu2_url"
+          SKIP_SCAN=true
+        fi
+
+        # Check IND server health
+        echo "Checking Checkmarx IND server health..."
+        ind_response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/ || echo "000")
+
+        if [ "$ind_response" = "200" ]; then
+          echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
+        else
+          echo "⚠️  Checkmarx IND server returned: HTTP $ind_response"
+          SKIP_SCAN=true
+        fi
+
+        # Set outputs
+        if [ "$SKIP_SCAN" = "true" ]; then
+          echo "::warning::Checkmarx services may be unavailable"
+          echo "ℹ️  Consider skipping scan to avoid blocking builds"
+          echo "healthy=false" >> $GITHUB_OUTPUT
+          echo "skip-scan=true" >> $GITHUB_OUTPUT
+
+          # Set environment variable for backward compatibility
+          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
+        else
+          echo "healthy=true" >> $GITHUB_OUTPUT
+          echo "skip-scan=false" >> $GITHUB_OUTPUT
+        fi

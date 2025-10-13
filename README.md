@@ -1,9 +1,14 @@
 # Checkmarx GitHub Actions
 
-This repository provides two GitHub Actions for Checkmarx integration:
+This repository provides three GitHub Actions for Checkmarx integration:
 
 1. **SARIF Upload Action** (`action.yml`) - Uploads SARIF files to Checkmarx via BYOR (Bring Your Own Results)
-2. **Full Scan Action** (`checkmarx-scan/action.yml`) - Complete Checkmarx scan with automatic SARIF upload to both GitHub Security and Checkmarx
+2. **Full Scan Action** (`checkmarx-scan/`) - Complete Checkmarx scan for private repos and regular PRs
+3. **Fork-Friendly Scan Action** (`checkmarx-scan-public/`) - Safe Checkmarx scanning for public repos with fork PRs
+
+Plus shared components for common functionality:
+- `shared/fix-sarif` - SARIF compatibility fixes for GitHub Code Scanning
+- `shared/health-check` - Checkmarx service health verification
 
 ## Purpose
 
@@ -17,15 +22,59 @@ Checkmarx has limited native support for Rust security scanning. This action bri
 - Simple, focused implementation
 - Reusable across all Midnight repositories
 
-## Actions Overview
+## Which Action Should I Use?
+
+### Decision Tree
+
+```
+Do you have existing SARIF files (e.g., from cargo-audit)?
+├─ Yes → Use SARIF Upload Action (action.yml)
+└─ No → Need full Checkmarx scan
+    │
+    Is your repository public AND accepting fork PRs?
+    ├─ Yes → Use checkmarx-scan-public (fork-friendly)
+    └─ No → Use checkmarx-scan (standard)
+```
 
 ### 1. SARIF Upload Action (BYOR Only)
 
-Use this when you have existing SARIF files (e.g., from cargo-audit) that you want to upload to Checkmarx.
+**When to use:**
+- You have SARIF files from other tools (cargo-audit, trivy, semgrep, etc.)
+- You want to upload existing scan results to Checkmarx portal
+- You're handling scanning separately
 
-### 2. Full Scan Action (Complete Checkmarx Workflow)
+**See:** Main [action.yml](action.yml) at root
 
-Use this to replace the entire Checkmarx workflow - it performs a full scan and uploads results to both GitHub Security and Checkmarx.
+### 2. Full Scan Action (Private Repos / Regular PRs)
+
+**When to use:**
+- Private repositories where all contributors are trusted
+- Public repos that DON'T accept fork PRs
+- You want to test workflow changes in PRs before merging
+- Standard `pull_request` event workflow
+
+**Features:**
+- Full Checkmarx scan (SAST, SCA, KICS, SCS/Scorecard)
+- Health checks (skips during outages)
+- Dual upload (GitHub + Checkmarx portal)
+- Code checkout required
+
+**See:** [checkmarx-scan/README.md](checkmarx-scan/README.md)
+
+### 3. Fork-Friendly Scan Action (Public Repos with Fork PRs)
+
+**When to use:**
+- Public repositories accepting fork PRs
+- Security-sensitive workflows with untrusted contributors
+- `pull_request_target` event workflow
+
+**Features:**
+- No code checkout (secure for fork PRs)
+- Remote URL scanning
+- Works with `pull_request_target` event
+- Fork PRs get secrets access safely
+
+**See:** [checkmarx-scan-public/README.md](checkmarx-scan-public/README.md)
 
 ## Usage
 
@@ -203,6 +252,32 @@ Any tool that generates SARIF 2.1.0 format, including:
 4. **Transforms** SARIF if needed (adds `tool.name` at top level for Checkmarx compatibility)
 5. **Uploads** the SARIF file using the `cx utils import` command
 6. **Cleans up** credentials and temporary files
+
+## Shared Components
+
+The repository includes reusable composite actions for common functionality:
+
+### Fix SARIF (`shared/fix-sarif`)
+
+Fixes common SARIF issues that prevent GitHub Code Scanning upload:
+- Empty `artifactLocation.uri` values
+- Missing `message.text` fields
+
+**Used by:** Both `checkmarx-scan` and `checkmarx-scan-public`
+
+**See:** [shared/fix-sarif/README.md](shared/fix-sarif/README.md)
+
+### Health Check (`shared/health-check`)
+
+Checks Checkmarx service availability to avoid blocking builds during outages:
+- EU2 status page check
+- IND server health check
+
+**Philosophy:** Fail open (skip scan) rather than fail closed (block build)
+
+**Used by:** Both `checkmarx-scan` and `checkmarx-scan-public`
+
+**See:** [shared/health-check/README.md](shared/health-check/README.md)
 
 ## Limitations
 

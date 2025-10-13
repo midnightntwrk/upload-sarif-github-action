@@ -1,0 +1,64 @@
+name: 'Fix SARIF for GitHub Compatibility'
+description: 'Fixes common SARIF issues that prevent GitHub Code Scanning upload'
+author: 'Midnight'
+branding:
+  icon: 'tool'
+  color: 'blue'
+
+inputs:
+  sarif-file:
+    description: 'Path to SARIF file to fix'
+    required: false
+    default: 'cx_result.sarif'
+
+outputs:
+  fixed:
+    description: 'Whether SARIF was successfully fixed (true/false)'
+    value: ${{ steps.fix.outputs.fixed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Fix SARIF for GitHub compatibility
+      id: fix
+      shell: bash
+      run: |
+        SARIF_FILE="${{ inputs.sarif-file }}"
+
+        if [ ! -f "$SARIF_FILE" ]; then
+          echo "::warning::SARIF file not found: $SARIF_FILE"
+          echo "fixed=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Install jq if not present
+        if ! command -v jq &> /dev/null; then
+          echo "Installing jq..."
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          if [ "$OS" = "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y jq
+          elif [ "$OS" = "darwin" ]; then
+            brew install jq
+          fi
+        fi
+
+        if ! command -v jq &> /dev/null; then
+          echo "::warning::jq not available, SARIF may have compatibility issues"
+          echo "fixed=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Fix empty URIs
+        # GitHub Code Scanning fails if artifactLocation.uri is empty
+        mv "$SARIF_FILE" "${SARIF_FILE}.orig"
+        jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' "${SARIF_FILE}.orig" > "${SARIF_FILE}.tmp"
+
+        # Fix missing message text
+        # Newer codeql-action versions require non-empty message.text
+        jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' "${SARIF_FILE}.tmp" > "$SARIF_FILE"
+
+        # Cleanup temporary files
+        rm -f "${SARIF_FILE}.tmp" "${SARIF_FILE}.orig"
+
+        echo "✅ Fixed SARIF for GitHub compatibility"
+        echo "fixed=true" >> $GITHUB_OUTPUT
