@@ -1,0 +1,49 @@
+name: 'Upload SARIF to Checkmarx BYOR'
+description: 'Uploads SARIF results to Checkmarx portal via BYOR (Bring Your Own Results)'
+author: 'Midnight'
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  sarif-file:
+    description: 'Path to SARIF file to upload'
+    required: false
+    default: 'cx_result.sarif'
+  project-name:
+    description: 'Checkmarx project name'
+    required: true
+  cx-client-id:
+    description: 'Checkmarx OAuth2 client ID'
+    required: true
+  cx-client-secret:
+    description: 'Checkmarx OAuth2 client secret'
+    required: true
+  cx-tenant:
+    description: 'Checkmarx tenant'
+    required: true
+  base-uri:
+    description: 'Checkmarx server URL'
+    required: false
+    default: 'https://eu-2.ast.checkmarx.net/'
+
+outputs:
+  upload-status:
+    description: 'Status of the SARIF upload (success or failed)'
+    value: ${{ steps.upload.outputs.upload-status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Upload SARIF to Checkmarx BYOR
+      id: upload
+      if: hashFiles(inputs.sarif-file) != ''
+      uses: ./upload-sarif-github-action
+      with:
+        sarif-file: ${{ inputs.sarif-file }}
+        project-name: ${{ inputs.project-name }}
+        cx-client-id: ${{ inputs.cx-client-id }}
+        cx-client-secret: ${{ inputs.cx-client-secret }}
+        cx-tenant: ${{ inputs.cx-tenant }}
+        base-uri: ${{ inputs.base-uri }}
+      continue-on-error: true

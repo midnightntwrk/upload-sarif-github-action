@@ -194,8 +194,8 @@ runs:
       continue-on-error: true
 
     - name: Upload SARIF to Checkmarx BYOR
-      if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
-      uses: ./upload-sarif-github-action
+      if: ${{ inputs.upload-to-checkmarx == 'true' }}
+      uses: ./upload-sarif-github-action/shared/upload-byor
       with:
         sarif-file: cx_result.sarif
         project-name: ${{ inputs.project-name }}
@@ -203,7 +203,6 @@ runs:
         cx-client-secret: ${{ inputs.cx-client-secret }}
         cx-tenant: ${{ inputs.cx-tenant }}
         base-uri: ${{ inputs.base-uri }}
-      continue-on-error: true
 
     - name: Cleanup
       if: always()

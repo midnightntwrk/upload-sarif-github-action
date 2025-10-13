@@ -90,10 +90,8 @@ runs:
       continue-on-error: true
 
     - name: Upload SARIF to Checkmarx BYOR
-      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
-      # Note: When repo is private, this requires checking out the action first
-      # Once public, can use: midnightntwrk/upload-sarif-github-action@main
-      uses: ./upload-sarif-github-action
+      if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-checkmarx == 'true' }}
+      uses: ./upload-sarif-github-action/shared/upload-byor
       with:
         sarif-file: cx_result.sarif
         project-name: ${{ inputs.project-name }}
@@ -101,4 +99,3 @@ runs:
         cx-client-secret: ${{ inputs.cx-client-secret }}
         cx-tenant: ${{ inputs.cx-tenant }}
         base-uri: ${{ inputs.base-uri }}
-      continue-on-error: true

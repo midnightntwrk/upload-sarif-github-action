@@ -9,6 +9,7 @@ This repository provides three GitHub Actions for Checkmarx integration:
 Plus shared components for common functionality:
 - `shared/fix-sarif` - SARIF compatibility fixes for GitHub Code Scanning
 - `shared/health-check` - Checkmarx service health verification
+- `shared/upload-byor` - Checkmarx portal upload via BYOR
 
 ## Purpose
 
@@ -305,6 +306,17 @@ Checks Checkmarx service availability to avoid blocking builds during outages:
 **Used by:** Both `checkmarx-scan` and `checkmarx-scan-public`
 
 **See:** [shared/health-check/README.md](shared/health-check/README.md)
+
+### Upload BYOR (`shared/upload-byor`)
+
+Uploads SARIF results to Checkmarx portal via BYOR (Bring Your Own Results):
+- Wraps the root SARIF upload action
+- Provides consistent interface for both scan actions
+- Checks file existence before upload
+
+**Used by:** Both `checkmarx-scan` and `checkmarx-scan-public`
+
+**See:** [shared/upload-byor/README.md](shared/upload-byor/README.md)
 
 ## Limitations
 
