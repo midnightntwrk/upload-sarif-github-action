@@ -68,7 +68,7 @@ runs:
         echo "Repository: ${{ inputs.repo-url }}"
         echo "Branch: ${{ inputs.branch }}"
         echo "Project: ${{ inputs.project-name }}"
-        echo "Scan Types: SAST, SCA, KICS (IaC Security), API Security, Container Security"
+        echo "Scan Types: All licensed scanners (SAST, SCA, KICS, API Security, Container Security, etc.)"
         if [ -n "${{ inputs.scs-repo-token }}" ] || [ -n "${{ github.token }}" ]; then
           echo "SCS/Scorecard: Enabled"
         else
@@ -133,7 +133,7 @@ runs:
         SCAN_CMD="$SCAN_CMD --project-name \"${{ inputs.project-name }}\""
         SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
         SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
-        SCAN_CMD="$SCAN_CMD --scan-types sast,sca,kics,api-security,container-security"
+        # Omit --scan-types to run all licensed scanners by default
 
         # Add SCS parameters if token is provided
         if [ -n "${{ inputs.scs-repo-token }}" ]; then
