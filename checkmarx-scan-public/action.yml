@@ -133,7 +133,6 @@ runs:
         SCAN_CMD="$SCAN_CMD --project-name \"${{ inputs.project-name }}\""
         SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
         SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
-        # Omit --scan-types to run all licensed scanners by default
 
         # Add SCS parameters if token is provided
         if [ -n "${{ inputs.scs-repo-token }}" ]; then
