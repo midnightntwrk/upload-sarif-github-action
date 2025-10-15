@@ -209,14 +209,16 @@ runs:
 
     - name: Upload SARIF to Checkmarx BYOR
       if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
-      uses: ./
-      with:
-        sarif-file: cx_result.sarif
-        project-name: ${{ inputs.project-name }}
-        cx-client-id: ${{ inputs.cx-client-id }}
-        cx-client-secret: ${{ inputs.cx-client-secret }}
-        cx-tenant: ${{ inputs.cx-tenant }}
-        base-uri: ${{ inputs.base-uri }}
+      shell: bash
+      run: |
+        echo "Uploading SARIF to Checkmarx via BYOR..."
+        echo "Project: ${{ inputs.project-name }}"
+
+        if ./cx utils import --project-name "${{ inputs.project-name }}" --import-file-path "cx_result.sarif"; then
+          echo "✅ SARIF successfully uploaded to Checkmarx"
+        else
+          echo "::warning::Failed to upload SARIF to Checkmarx BYOR"
+        fi
       continue-on-error: true
 
     - name: Cleanup
