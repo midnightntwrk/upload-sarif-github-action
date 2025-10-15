@@ -122,7 +122,7 @@ runs:
 
     - name: Upload SARIF to GitHub Security
       if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-github == 'true' && github.event.repository.private == false }}
-      uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
+      uses: github/codeql-action/upload-sarif@755f44910c12a3d7ca0d8c6e42c048b3362f7cec  # v3.30.8
       with:
         sarif_file: cx_result.sarif
       continue-on-error: true
