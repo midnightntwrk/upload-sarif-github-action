@@ -27,7 +27,7 @@ jobs:
           cargo audit --format sarif > rust-audit.sarif || true
       
       - name: Upload Rust audit to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
+        uses: midnightntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: rust-audit.sarif
           project-name: ${{ github.event.repository.name }}-rust
@@ -59,7 +59,7 @@ jobs:
           output: 'trivy.sarif'
       
       - name: Upload Trivy results to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
+        uses: midnightntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: trivy.sarif
           project-name: ${{ github.event.repository.name }}-container
@@ -89,7 +89,7 @@ jobs:
       
       - name: Upload Semgrep results to Checkmarx
         if: always() && steps.semgrep.outputs.sarif != ''
-        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
+        uses: midnightntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: semgrep.sarif
           project-name: ${{ github.event.repository.name }}-sast

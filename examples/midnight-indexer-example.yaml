@@ -57,7 +57,7 @@ jobs:
           category: cargo-audit
       
       - name: Upload SARIF to Checkmarx
-        uses: midnight-ntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
+        uses: midnightntwrk/upload-sarif-github-action@46581f193c493f6bf464cca059dd7f4238307373  #v1
         with:
           sarif-file: scan.sarif
           project-name: midnight-indexer

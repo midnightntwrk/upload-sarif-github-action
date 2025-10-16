@@ -1,9 +1,10 @@
 # Checkmarx GitHub Actions
 
-This repository provides two GitHub Actions for Checkmarx integration:
+This repository provides three GitHub Actions for Checkmarx integration:
 
 1. **SARIF Upload Action** (`action.yml`) - Uploads SARIF files to Checkmarx via BYOR (Bring Your Own Results)
 2. **Full Scan Action** (`checkmarx-scan/action.yml`) - Complete Checkmarx scan with automatic SARIF upload to both GitHub Security and Checkmarx
+3. **Fork-Friendly Scan Action** (`checkmarx-scan-public/action.yml`) - URL-based scanning safe for fork PRs with `pull_request_target`
 
 ## Purpose
 
@@ -25,11 +26,13 @@ Use this when you have existing SARIF files (e.g., from cargo-audit) that you wa
 
 ### 2. Full Scan Action (Complete Checkmarx Workflow)
 
-Use this to replace the entire Checkmarx workflow - it performs a full scan and uploads results to both GitHub Security and Checkmarx.
+Use this to replace the entire Checkmarx workflow - it performs a full scan and uploads results to both GitHub Security and Checkmarx. Requires checking out the PR code.
+
+### 3. Fork-Friendly Scan Action (Safe for pull_request_target)
+
+Use this for scanning fork PRs without security risks. Uses URL-based scanning (Checkmarx fetches code directly from GitHub) instead of checking out PR code. Safe with `pull_request_target` event.
 
 ## Usage
-
-> **Note for Private Repository**: While this repository is private, you must check it out first before using it. The composite action internally references the BYOR action, so both need to be available in the workspace. See the examples below for the required setup. Once the repository is made public, the simpler syntax can be used.
 
 ### SARIF Upload Action - Basic Example
 
@@ -70,24 +73,53 @@ jobs:
     
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      
-      # If this repo is private, add this checkout step:
-      # - name: Checkout Upload action repository
-      #   uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  #v5.0.0
-      #   with:
-      #     repository: midnightntwrk/upload-sarif-github-action
-      #     ref: main
-      #     path: upload-sarif-github-action
-      #     token: ${{ secrets.MIDNIGHTCI_REPO }}
-      
+
       - name: Checkmarx Full Scan
         uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan@main
-        # If private repo, use: ./upload-sarif-github-action/checkmarx-scan
         with:
           cx-client-id: ${{ secrets.CX_CLIENT_ID }}
           cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
           cx-tenant: ${{ secrets.CX_TENANT }}
           scs-repo-token: ${{ secrets.MIDNIGHTCI_REPO }}
+```
+
+### Fork-Friendly Scan Action - Example
+
+This is safe for fork PRs with `pull_request_target`:
+
+```yaml
+name: Checkmarx Security Scan
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [ '**' ]
+  push:
+    branches: [ 'main' ]
+
+permissions: {}
+
+jobs:
+  checkmarx-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      security-events: write
+
+    steps:
+      # CRITICAL: DO NOT CHECKOUT THE PR CODE
+      # This is what makes it safe with pull_request_target
+
+      - name: Checkmarx Full Scan
+        uses: midnightntwrk/upload-sarif-github-action/checkmarx-scan-public@main
+        with:
+          cx-client-id: ${{ secrets.CX_CLIENT_ID }}
+          cx-client-secret: ${{ secrets.CX_CLIENT_SECRET_EU }}
+          cx-tenant: ${{ secrets.CX_TENANT }}
+          scs-repo-token: ${{ secrets.MIDNIGHTCI_REPO }}
+          upload-to-github: 'true'
+          upload-to-checkmarx: 'true'
 ```
 
 ### Complete Workflow Example (SARIF Upload Only)
@@ -141,7 +173,6 @@ jobs:
 | `cx-tenant` | Checkmarx tenant | **Yes** | - |
 | `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
 | `branch` | Branch name (for future multi-branch support) | No | Current branch |
-| `additional-params` | Additional CLI parameters for cx utils import | No | - |
 
 ### Full Scan Action Inputs
 
@@ -153,8 +184,24 @@ jobs:
 | `cx-tenant` | Checkmarx tenant | **Yes** | - |
 | `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
 | `scs-repo-token` | GitHub token for SCS scanning | **Yes** | - |
-| `additional-params` | Additional parameters for scan | No | - |
+| `file-filter` | File exclusion patterns (comma-separated glob patterns, e.g. `!*.json,!test/*`) | No | - |
 | `upload-to-github` | Upload to GitHub Security | No | `true` (auto-disabled for private repos) |
+| `upload-to-checkmarx` | Upload to Checkmarx BYOR | No | `true` |
+
+### Fork-Friendly Scan Action Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `project-name` | Checkmarx project name | No | Repository name |
+| `cx-client-id` | Checkmarx OAuth2 client ID | **Yes** | - |
+| `cx-client-secret` | Checkmarx OAuth2 client secret | **Yes** | - |
+| `cx-tenant` | Checkmarx tenant | **Yes** | - |
+| `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
+| `repo-url` | Repository URL to scan | No | PR head repo or current repo |
+| `branch` | Branch to scan | No | PR head ref or current branch |
+| `scs-repo-token` | GitHub token for SCS scanning | No | Falls back to `github.token` |
+| `file-filter` | File exclusion patterns (comma-separated glob patterns, e.g. `!*.json,!test/*`) | No | - |
+| `upload-to-github` | Upload to GitHub Security | No | `true` |
 | `upload-to-checkmarx` | Upload to Checkmarx BYOR | No | `true` |
 
 ## Outputs
