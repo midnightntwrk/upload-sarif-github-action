@@ -105,7 +105,7 @@ runs:
 
         if [ -n "${INPUT_FILE_FILTER:-}" ]; then
           # Validate: only allow safe characters for glob patterns
-          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\-\_\/\,]+$ ]]; then
+          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\_\/\,-]+$ ]]; then
             echo "FILE_FILTER_PARAM=--file-filter ${INPUT_FILE_FILTER}" >> "${GITHUB_ENV}"
           else
             echo "::error::Invalid file-filter pattern: contains forbidden characters"

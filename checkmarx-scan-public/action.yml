@@ -134,15 +134,6 @@ runs:
         ./cx configure set --prop-name cx_client_secret --prop-value "${INPUT_CLIENT_SECRET}"
         ./cx configure set --prop-name cx_tenant --prop-value "${INPUT_TENANT}"
 
-        # Configure SCS token (avoid exposing in CLI args)
-        if [ -n "${INPUT_SCS_TOKEN:-}" ]; then
-          echo "Configuring SCS token..."
-          ./cx configure set --prop-name scs_repo_token --prop-value "${INPUT_SCS_TOKEN}"
-        elif [ -n "${GITHUB_TOKEN:-}" ]; then
-          echo "Configuring SCS with GitHub token..."
-          ./cx configure set --prop-name scs_repo_token --prop-value "${GITHUB_TOKEN}"
-        fi
-
         # Test authentication
         if ./cx auth validate; then
           echo "✅ Authentication successful"
@@ -177,16 +168,21 @@ runs:
         args+=(--report-format sarif)
         args+=(--output-path .)
 
-        # Add SCS repo URL if token configured (token already in config)
-        if [ -n "${INPUT_SCS_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
+        # Add SCS parameters if token available
+        if [ -n "${INPUT_SCS_TOKEN:-}" ]; then
           echo "Adding SCS parameters..."
           args+=(--scs-repo-url "${INPUT_REPO_URL}")
+          args+=(--scs-repo-token "${INPUT_SCS_TOKEN}")
+        elif [ -n "${GITHUB_TOKEN:-}" ]; then
+          echo "Adding SCS parameters (using github.token)..."
+          args+=(--scs-repo-url "${INPUT_REPO_URL}")
+          args+=(--scs-repo-token "${GITHUB_TOKEN}")
         fi
 
         # Add file filter if provided
         if [ -n "${INPUT_FILE_FILTER:-}" ]; then
           # Validate: only allow safe characters for glob patterns
-          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\-\_\/\,]+$ ]]; then
+          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\_\/\,-]+$ ]]; then
             echo "Adding file filter: ${INPUT_FILE_FILTER}"
             args+=(--file-filter "${INPUT_FILE_FILTER}")
           else
