@@ -173,7 +173,6 @@ jobs:
 | `cx-tenant` | Checkmarx tenant | **Yes** | - |
 | `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
 | `branch` | Branch name (for future multi-branch support) | No | Current branch |
-| `additional-params` | Additional CLI parameters for cx utils import | No | - |
 
 ### Full Scan Action Inputs
 
@@ -185,7 +184,7 @@ jobs:
 | `cx-tenant` | Checkmarx tenant | **Yes** | - |
 | `base-uri` | Checkmarx server URL | No | `https://eu-2.ast.checkmarx.net/` |
 | `scs-repo-token` | GitHub token for SCS scanning | **Yes** | - |
-| `additional-params` | Additional parameters for scan | No | - |
+| `file-filter` | File exclusion patterns (comma-separated glob patterns, e.g. `!*.json,!test/*`) | No | - |
 | `upload-to-github` | Upload to GitHub Security | No | `true` (auto-disabled for private repos) |
 | `upload-to-checkmarx` | Upload to Checkmarx BYOR | No | `true` |
 
@@ -201,7 +200,7 @@ jobs:
 | `repo-url` | Repository URL to scan | No | PR head repo or current repo |
 | `branch` | Branch to scan | No | PR head ref or current branch |
 | `scs-repo-token` | GitHub token for SCS scanning | No | Falls back to `github.token` |
-| `additional-params` | Additional parameters for scan | No | - |
+| `file-filter` | File exclusion patterns (comma-separated glob patterns, e.g. `!*.json,!test/*`) | No | - |
 | `upload-to-github` | Upload to GitHub Security | No | `true` |
 | `upload-to-checkmarx` | Upload to Checkmarx BYOR | No | `true` |
 
