@@ -26,8 +26,8 @@ inputs:
   scs-repo-token:
     description: 'GitHub token for SCS scanning (Supply Chain Security)'
     required: true
-  additional-params:
-    description: 'Additional parameters for Checkmarx scan'
+  file-filter:
+    description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
     required: false
     default: ''
   upload-to-github:
@@ -53,6 +53,9 @@ runs:
     - name: Check Checkmarx EU2 status
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         # URL of the EU2 status page
         url="https://eu2-status.ast.checkmarx.net/"
         html=$(curl -s "$url")
@@ -63,27 +66,54 @@ runs:
           echo "⚠️ Checkmarx EU2 may be experiencing issues"
           echo "Status page: $url"
           echo "Setting SKIP_CHECKMARX flag to skip scan"
-          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
+          echo "SKIP_CHECKMARX=true" >> "${GITHUB_ENV}"
         fi
 
     - name: Check Checkmarx IND server health
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         response=$(curl -s -o /dev/null -w "%{http_code}" https://ind-status.ast.checkmarx.net/)
         if [ "$response" = "200" ]; then
           echo "✅ Checkmarx IND server: Healthy (HTTP 200)"
         else
           echo "⚠️ Checkmarx IND server returned: HTTP $response"
           echo "Setting SKIP_CHECKMARX flag to skip scan"
-          echo "SKIP_CHECKMARX=true" >> $GITHUB_ENV
+          echo "SKIP_CHECKMARX=true" >> "${GITHUB_ENV}"
         fi
 
     - name: Notify if skipping Checkmarx
       if: env.SKIP_CHECKMARX == 'true'
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         echo "::warning::Skipping Checkmarx scan due to service unavailability"
         echo "ℹ️ Build will continue without security scanning to avoid blocking development"
+
+    - name: Validate and prepare file filter
+      if: env.SKIP_CHECKMARX != 'true'
+      shell: bash
+      env:
+        INPUT_FILE_FILTER: ${{ inputs.file-filter }}
+      run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
+        if [ -n "${INPUT_FILE_FILTER:-}" ]; then
+          # Validate: only allow safe characters for glob patterns
+          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\-\_\/\,]+$ ]]; then
+            echo "FILE_FILTER_PARAM=--file-filter ${INPUT_FILE_FILTER}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::Invalid file-filter pattern: contains forbidden characters"
+            exit 1
+          fi
+        else
+          echo "FILE_FILTER_PARAM=" >> "${GITHUB_ENV}"
+        fi
 
     - name: Run Checkmarx scan
       id: checkmarx-scan
@@ -98,19 +128,22 @@ runs:
           --scs-repo-url https://github.com/${{ github.repository }}
           --scs-repo-token ${{ inputs.scs-repo-token }}
           --report-format sarif
-          ${{ inputs.additional-params }}
+          ${{ env.FILE_FILTER_PARAM }}
 
     - name: Fix SARIF for GitHub upload
       if: env.SKIP_CHECKMARX != 'true'
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         # GitHub fails if artifactLocation.uri is empty
         # Replace empty URIs with a placeholder file
         if [ -f "./cx_result.sarif" ]; then
           mv ./cx_result.sarif ./cx_result.sarif.orig
           jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' cx_result.sarif.orig > cx_result.sarif
           echo "Fixed empty artifactLocation URIs in SARIF file"
-          
+
           # Fix missing message text that causes newer codeql-action versions to fail
           mv ./cx_result.sarif ./cx_result.sarif.tmp
           jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' cx_result.sarif.tmp > cx_result.sarif
@@ -122,21 +155,56 @@ runs:
 
     - name: Upload SARIF to GitHub Security
       if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-github == 'true' && github.event.repository.private == false }}
-      uses: github/codeql-action/upload-sarif@9fde80919ae2e536afc500421fa2c837105e21a1  # v3.29.2
+      uses: github/codeql-action/upload-sarif@755f44910c12a3d7ca0d8c6e42c048b3362f7cec  # v3.30.8
       with:
         sarif_file: cx_result.sarif
       continue-on-error: true
 
     - name: Upload SARIF to Checkmarx BYOR
       if: ${{ env.SKIP_CHECKMARX != 'true' && inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
-      # Note: When repo is private, this requires checking out the action first
-      # Once public, can use: midnightntwrk/upload-sarif-github-action@main
-      uses: ./upload-sarif-github-action
-      with:
-        sarif-file: cx_result.sarif
-        project-name: ${{ inputs.project-name }}
-        cx-client-id: ${{ inputs.cx-client-id }}
-        cx-client-secret: ${{ inputs.cx-client-secret }}
-        cx-tenant: ${{ inputs.cx-tenant }}
-        base-uri: ${{ inputs.base-uri }}
+      shell: bash
+      env:
+        INPUT_PROJECT_NAME: ${{ inputs.project-name }}
+        INPUT_BASE_URI: ${{ inputs.base-uri }}
+        INPUT_CLIENT_ID: ${{ inputs.cx-client-id }}
+        INPUT_CLIENT_SECRET: ${{ inputs.cx-client-secret }}
+        INPUT_TENANT: ${{ inputs.cx-tenant }}
+      run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
+        echo "Uploading SARIF to Checkmarx via BYOR..."
+        echo "Project: ${INPUT_PROJECT_NAME}"
+
+        # Need to authenticate first (checkmarx-scan doesn't have CLI installed)
+        # Install CLI
+        CLI_VERSION="2.3.35"
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        case "${ARCH}" in
+          x86_64) ARCH="x64" ;;
+          aarch64|arm64) ARCH="arm64" ;;
+        esac
+
+        CLI_URL="https://github.com/Checkmarx/ast-cli/releases/download/${CLI_VERSION}/ast-cli_${CLI_VERSION}_${OS}_${ARCH}.tar.gz"
+        curl -L -o cx-cli.tar.gz "${CLI_URL}"
+        tar -xzf cx-cli.tar.gz
+        chmod +x cx
+
+        # Authenticate
+        ./cx configure set --prop-name cx_base_uri --prop-value "${INPUT_BASE_URI}"
+        ./cx configure set --prop-name cx_client_id --prop-value "${INPUT_CLIENT_ID}"
+        ./cx configure set --prop-name cx_client_secret --prop-value "${INPUT_CLIENT_SECRET}"
+        ./cx configure set --prop-name cx_tenant --prop-value "${INPUT_TENANT}"
+
+        # Upload
+        if ./cx utils import --project-name "${INPUT_PROJECT_NAME}" --import-file-path "cx_result.sarif"; then
+          echo "✅ SARIF successfully uploaded to Checkmarx"
+        else
+          echo "::warning::Failed to upload SARIF to Checkmarx BYOR"
+        fi
+
+        # Cleanup
+        ./cx configure clear || true
+        rm -f cx-cli.tar.gz cx LICENSE README.md || true
       continue-on-error: true

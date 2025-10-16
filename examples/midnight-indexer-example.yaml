@@ -51,7 +51,7 @@ jobs:
           cargo audit --format json 2>/dev/null | jq -r '.vulnerabilities.count // 0' || echo "Unable to count vulnerabilities"
       
       - name: Upload SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@02ab253bd299d261d00cdf8a9bca38fea2697d50  # v3.29.2
+        uses: github/codeql-action/upload-sarif@755f44910c12a3d7ca0d8c6e42c048b3362f7cec  # v3.30.8
         with:
           sarif_file: scan.sarif
           category: cargo-audit
