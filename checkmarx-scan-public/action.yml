@@ -31,8 +31,8 @@ inputs:
     description: 'Branch to scan (defaults to PR head ref or current branch)'
     required: false
     default: ${{ github.event.pull_request.head.ref || github.ref_name }}
-  additional-params:
-    description: 'Additional parameters for Checkmarx scan'
+  file-filter:
+    description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
     required: false
     default: ''
   upload-to-github:
@@ -63,13 +63,22 @@ runs:
 
     - name: Display scan parameters
       shell: bash
+      env:
+        INPUT_REPO_URL: ${{ inputs.repo-url }}
+        INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_PROJECT_NAME: ${{ inputs.project-name }}
+        INPUT_SCS_TOKEN: ${{ inputs.scs-repo-token }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         echo "=== Checkmarx Fork-Friendly Scan ==="
-        echo "Repository: ${{ inputs.repo-url }}"
-        echo "Branch: ${{ inputs.branch }}"
-        echo "Project: ${{ inputs.project-name }}"
+        echo "Repository: ${INPUT_REPO_URL}"
+        echo "Branch: ${INPUT_BRANCH}"
+        echo "Project: ${INPUT_PROJECT_NAME}"
         echo "Scan Types: All licensed scanners (SAST, SCA, KICS, API Security, Container Security, etc.)"
-        if [ -n "${{ inputs.scs-repo-token }}" ] || [ -n "${{ github.token }}" ]; then
+        if [ -n "${INPUT_SCS_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
           echo "SCS/Scorecard: Enabled"
         else
           echo "SCS/Scorecard: Disabled (no token available)"
@@ -79,6 +88,9 @@ runs:
     - name: Install Checkmarx CLI
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         CLI_VERSION="2.3.37"
         echo "Installing Checkmarx CLI ${CLI_VERSION}..."
 
@@ -105,12 +117,31 @@ runs:
 
     - name: Authenticate with Checkmarx
       shell: bash
+      env:
+        INPUT_BASE_URI: ${{ inputs.base-uri }}
+        INPUT_CLIENT_ID: ${{ inputs.cx-client-id }}
+        INPUT_CLIENT_SECRET: ${{ inputs.cx-client-secret }}
+        INPUT_TENANT: ${{ inputs.cx-tenant }}
+        INPUT_SCS_TOKEN: ${{ inputs.scs-repo-token }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         echo "Authenticating with Checkmarx..."
-        ./cx configure set --prop-name cx_base_uri --prop-value "${{ inputs.base-uri }}"
-        ./cx configure set --prop-name cx_client_id --prop-value "${{ inputs.cx-client-id }}"
-        ./cx configure set --prop-name cx_client_secret --prop-value "${{ inputs.cx-client-secret }}"
-        ./cx configure set --prop-name cx_tenant --prop-value "${{ inputs.cx-tenant }}"
+        ./cx configure set --prop-name cx_base_uri --prop-value "${INPUT_BASE_URI}"
+        ./cx configure set --prop-name cx_client_id --prop-value "${INPUT_CLIENT_ID}"
+        ./cx configure set --prop-name cx_client_secret --prop-value "${INPUT_CLIENT_SECRET}"
+        ./cx configure set --prop-name cx_tenant --prop-value "${INPUT_TENANT}"
+
+        # Configure SCS token (avoid exposing in CLI args)
+        if [ -n "${INPUT_SCS_TOKEN:-}" ]; then
+          echo "Configuring SCS token..."
+          ./cx configure set --prop-name scs_repo_token --prop-value "${INPUT_SCS_TOKEN}"
+        elif [ -n "${GITHUB_TOKEN:-}" ]; then
+          echo "Configuring SCS with GitHub token..."
+          ./cx configure set --prop-name scs_repo_token --prop-value "${GITHUB_TOKEN}"
+        fi
 
         # Test authentication
         if ./cx auth validate; then
@@ -123,48 +154,60 @@ runs:
     - name: Run Checkmarx Scan on Remote Repository
       shell: bash
       id: scan
+      env:
+        INPUT_PROJECT_NAME: ${{ inputs.project-name }}
+        INPUT_REPO_URL: ${{ inputs.repo-url }}
+        INPUT_BRANCH: ${{ inputs.branch }}
+        INPUT_FILE_FILTER: ${{ inputs.file-filter }}
+        INPUT_SCS_TOKEN: ${{ inputs.scs-repo-token }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         echo "Scanning remote repository..."
-        echo "URL: ${{ inputs.repo-url }}"
-        echo "Branch: ${{ inputs.branch }}"
+        echo "URL: ${INPUT_REPO_URL}"
+        echo "Branch: ${INPUT_BRANCH}"
 
-        # Build scan command
-        SCAN_CMD="./cx scan create"
-        SCAN_CMD="$SCAN_CMD --project-name \"${{ inputs.project-name }}\""
-        SCAN_CMD="$SCAN_CMD -s \"${{ inputs.repo-url }}\""
-        SCAN_CMD="$SCAN_CMD --branch \"${{ inputs.branch }}\""
+        # Build scan command using array (prevents injection)
+        args=(./cx scan create)
+        args+=(--project-name "${INPUT_PROJECT_NAME}")
+        args+=(-s "${INPUT_REPO_URL}")
+        args+=(--branch "${INPUT_BRANCH}")
+        args+=(--report-format sarif)
+        args+=(--output-path .)
 
-        # Add SCS parameters if token is provided
-        if [ -n "${{ inputs.scs-repo-token }}" ]; then
+        # Add SCS repo URL if token configured (token already in config)
+        if [ -n "${INPUT_SCS_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
           echo "Adding SCS parameters..."
-          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
-          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ inputs.scs-repo-token }}"
-        elif [ -n "${{ github.token }}" ]; then
-          echo "Using GitHub token for SCS..."
-          SCAN_CMD="$SCAN_CMD --scs-repo-url ${{ inputs.repo-url }}"
-          SCAN_CMD="$SCAN_CMD --scs-repo-token ${{ github.token }}"
+          args+=(--scs-repo-url "${INPUT_REPO_URL}")
         fi
 
-        SCAN_CMD="$SCAN_CMD --report-format sarif"
-        SCAN_CMD="$SCAN_CMD --output-path ."
-
-        # Add any additional parameters
-        if [ -n "${{ inputs.additional-params }}" ]; then
-          SCAN_CMD="$SCAN_CMD ${{ inputs.additional-params }}"
+        # Add file filter if provided
+        if [ -n "${INPUT_FILE_FILTER:-}" ]; then
+          # Validate: only allow safe characters for glob patterns
+          if [[ "${INPUT_FILE_FILTER}" =~ ^[a-zA-Z0-9\!\*\.\-\_\/\,]+$ ]]; then
+            echo "Adding file filter: ${INPUT_FILE_FILTER}"
+            args+=(--file-filter "${INPUT_FILE_FILTER}")
+          else
+            echo "::error::Invalid file-filter pattern: contains forbidden characters"
+            exit 1
+          fi
         fi
 
-        echo "Executing scan (credentials hidden)..."
-        if eval "$SCAN_CMD"; then
+        # Execute scan safely (no eval)
+        echo "Executing scan..."
+        if "${args[@]}"; then
           echo "✅ Scan completed successfully"
 
           # Find the SARIF file
           if [ -f "cx_result.sarif" ]; then
             echo "SARIF file generated: cx_result.sarif"
-            echo "scan-id=success" >> $GITHUB_OUTPUT
+            echo "scan-id=success" >> "${GITHUB_OUTPUT}"
           else
             echo "::warning::SARIF file not found at expected location"
             # Try to find any SARIF file
-            find . -name "*.sarif" -type f | head -1
+            find . -name "*.sarif" -type f | head -1 || true
           fi
         else
           echo "::error::Checkmarx scan failed"
@@ -175,6 +218,9 @@ runs:
       if: ${{ hashFiles('cx_result.sarif') != '' }}
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         # GitHub fails if artifactLocation.uri is empty
         if [ -f "./cx_result.sarif" ]; then
           # jq is pre-installed on GitHub Actions runners
@@ -203,11 +249,16 @@ runs:
     - name: Upload SARIF to Checkmarx BYOR
       if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
       shell: bash
+      env:
+        INPUT_PROJECT_NAME: ${{ inputs.project-name }}
       run: |
-        echo "Uploading SARIF to Checkmarx via BYOR..."
-        echo "Project: ${{ inputs.project-name }}"
+        set -euo pipefail
+        IFS=$'\n\t'
 
-        if ./cx utils import --project-name "${{ inputs.project-name }}" --import-file-path "cx_result.sarif"; then
+        echo "Uploading SARIF to Checkmarx via BYOR..."
+        echo "Project: ${INPUT_PROJECT_NAME}"
+
+        if ./cx utils import --project-name "${INPUT_PROJECT_NAME}" --import-file-path "cx_result.sarif"; then
           echo "✅ SARIF successfully uploaded to Checkmarx"
         else
           echo "::warning::Failed to upload SARIF to Checkmarx BYOR"
@@ -218,6 +269,9 @@ runs:
       if: always()
       shell: bash
       run: |
+        set -euo pipefail
+        IFS=$'\n\t'
+
         # Clear stored credentials
         ./cx configure clear || true
 
