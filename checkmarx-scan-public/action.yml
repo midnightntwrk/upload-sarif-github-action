@@ -268,9 +268,6 @@ runs:
         set -euo pipefail
         IFS=$'\n\t'
 
-        # Clear stored credentials
-        ./cx configure clear || true
-
         # Clean up CLI installation files
         rm -f cx-cli.tar.gz cx LICENSE README.md || true
 
