@@ -205,6 +205,5 @@ runs:
         fi
 
         # Cleanup
-        ./cx configure clear || true
         rm -f cx-cli.tar.gz cx LICENSE README.md || true
       continue-on-error: true
