@@ -117,22 +117,15 @@ runs:
 
     - name: Authenticate with Checkmarx
       shell: bash
-      env:
-        INPUT_BASE_URI: ${{ inputs.base-uri }}
-        INPUT_CLIENT_ID: ${{ inputs.cx-client-id }}
-        INPUT_CLIENT_SECRET: ${{ inputs.cx-client-secret }}
-        INPUT_TENANT: ${{ inputs.cx-tenant }}
-        INPUT_SCS_TOKEN: ${{ inputs.scs-repo-token }}
-        GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         IFS=$'\n\t'
 
         echo "Authenticating with Checkmarx..."
-        ./cx configure set --prop-name cx_base_uri --prop-value "${INPUT_BASE_URI}"
-        ./cx configure set --prop-name cx_client_id --prop-value "${INPUT_CLIENT_ID}"
-        ./cx configure set --prop-name cx_client_secret --prop-value "${INPUT_CLIENT_SECRET}"
-        ./cx configure set --prop-name cx_tenant --prop-value "${INPUT_TENANT}"
+        ./cx configure set --prop-name cx_base_uri --prop-value "${{ inputs.base-uri }}"
+        ./cx configure set --prop-name cx_client_id --prop-value "${{ inputs.cx-client-id }}"
+        ./cx configure set --prop-name cx_client_secret --prop-value "${{ inputs.cx-client-secret }}"
+        ./cx configure set --prop-name cx_tenant --prop-value "${{ inputs.cx-tenant }}"
 
         # Test authentication
         if ./cx auth validate; then
