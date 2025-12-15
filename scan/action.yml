@@ -51,7 +51,7 @@ runs:
         [ "${{ inputs.scan_js_ts }}" = "true" ] && LANGS+=("javascript-typescript")
         [ "${{ inputs.scan_rust }}" = "true" ] && LANGS+=("rust")
         echo "languages=${LANGS[*]}" >> $GITHUB_OUTPUT
-        run: mkdir -p results
+        mkdir -p results
 
     - name: Run KICS Scan
       uses: checkmarx/kics-github-action@6b6fc1162a0f06704e4cca6e5f8e008ab20fabe5  #v2.1.16
