@@ -22,6 +22,10 @@ inputs:
     description: "GitHub token for API calls (optional)"
     required: false
     default: ""
+  codeql_paths:
+    description: "Comma-separated list of directories to scan with CodeQL"
+    required: false
+    default: "."  # defaults to repo root
   file-filter:
     description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
     required: false
@@ -89,28 +93,13 @@ runs:
       continue-on-error: true
       with:
         sarif_file: results
-        # category: 'trivy-fs'
 
-    # - name: Upload kics SARIF file to GitHub Security
-    #   uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a  #CodeQL Bundle v2.23.6
-    #   if: success() || failure()
-    #   continue-on-error: true
-    #   with:
-    #     sarif_file: results/results.sarif
-
-
-    # - name: Upload scorecard SARIF results to code-scanning
-    #   uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a  #CodeQL Bundle v2.23.6
-    #   if: success() || failure()
-    #   with:
-    #     sarif_file: results/scorecard-results.sarif
-    #     category: 'scorecard'
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
       with:
+        paths: ${{ inputs.codeql_paths }}
         languages: ${{ steps.set-languages.outputs.languages }}
-        # languages: actions,javascript-typescript,rust
         queries: security-and-quality
 
     - name: Analyze
