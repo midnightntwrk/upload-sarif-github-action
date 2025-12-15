@@ -26,10 +26,10 @@ inputs:
     description: "Comma-separated list of directories to scan with CodeQL"
     required: false
     default: "."  # defaults to repo root
-  file-filter:
-    description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
-    required: false
-    default: ''
+  # file-filter:
+  #   description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
+  #   required: false
+  #   default: ''
 
 outputs:
   sarif-file:
