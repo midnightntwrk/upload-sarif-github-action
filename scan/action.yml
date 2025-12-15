@@ -10,7 +10,7 @@ inputs:
     description: "Scan GitHub Actions code"
     required: false
     default: "true"
-  scan_js_ts:
+  scan_typescript:
     description: "Scan JavaScript/TypeScript code"
     required: false
     default: "true"
@@ -52,7 +52,7 @@ runs:
       run: |
         LANGS=()
         [ "${{ inputs.scan_actions }}" = "true" ] && LANGS+=("actions")
-        [ "${{ inputs.scan_js_ts }}" = "true" ] && LANGS+=("javascript-typescript")
+        [ "${{ inputs.scan_typescript }}" = "true" ] && LANGS+=("javascript-typescript")
         [ "${{ inputs.scan_rust }}" = "true" ] && LANGS+=("rust")
         echo "languages=${LANGS[*]}" >> $GITHUB_OUTPUT
         mkdir -p results
