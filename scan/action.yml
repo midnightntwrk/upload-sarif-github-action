@@ -98,7 +98,7 @@ runs:
     - name: Initialize CodeQL
       uses: github/codeql-action/init@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
       with:
-        paths: ${{ inputs.codeql_paths }}
+        source-root: ${{ inputs.codeql_paths }}
         languages: ${{ steps.set-languages.outputs.languages }}
         queries: security-and-quality
 
