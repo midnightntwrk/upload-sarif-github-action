@@ -106,7 +106,7 @@ runs:
         # Replace empty URIs with a placeholder file
         if [ -f "./results/scorecard-results.sarif" ]; then
           mv ./results/scorecard-results.sarif ./results/scorecard-results.sarif.orig
-          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' ./results/scorecard-results.sarif.orig > ./results/scorecard-results.sarif.sarif
+          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' ./results/scorecard-results.sarif.orig > ./results/scorecard-results.sarif
           echo "Fixed empty artifactLocation URIs in SARIF file"
 
           # Fix missing message text that causes newer codeql-action versions to fail
