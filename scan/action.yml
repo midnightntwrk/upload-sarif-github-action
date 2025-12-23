@@ -89,7 +89,7 @@ runs:
     - name: Run Scorecard Analysis
       uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2  #v2.4.3
       with:
-        results_file: results/scorecard-results.sarif
+        results_file: results/scorecard-results.sarif.unprocessed
         results_format: sarif
         publish_results: false
         repo_token: ${{ inputs.github_token }}
@@ -105,17 +105,12 @@ runs:
         # GitHub fails if artifactLocation.uri is empty
         # Replace empty URIs with a placeholder file
         if [ -f "./results/scorecard-results.sarif" ]; then
-          mv ./results/scorecard-results.sarif ./results/scorecard-results.sarif.orig
-          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' ./results/scorecard-results.sarif.orig > ./results/scorecard-results.sarif
+          jq '(.. | select(.uri? == "no file associated with this alert" or .uri? == "")) .uri = "README.md"' ./results/scorecard-results.sarif.unprocessed | \
+          jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' \
+          > ./results/scorecard-results.sarif
           echo "Fixed empty artifactLocation URIs in SARIF file"
-
-          # Fix missing message text that causes newer codeql-action versions to fail
-          mv ./results/scorecard-results.sarif ./results/scorecard-results.sarif.tmp
-          jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' ./results/scorecard-results.sarif.tmp > ./results/scorecard-results.sarif
-          rm -f ./results/scorecard-results.sarif.tmp ./results/scorecard-results.sarif.orig
-          echo "Fixed missing message text in SARIF file"
         else
-          echo "::warning::No SARIF file generated from scorecard scan"
+          echo "::warning:: No SARIF file generated from scorecard scan"
         fi
 
     - name: Upload trivy SARIF file
