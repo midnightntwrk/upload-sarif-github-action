@@ -79,6 +79,13 @@ runs:
         #   severity: 'CRITICAL,HIGH,MEDIUM'
         trivy-config: trivy.yml
 
+    - name: Run OpenGrep
+      shell: bash
+      run: |
+        # TODO: install in more secure way
+        curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
+        opengrep scan --config auto --taint-intrafile --sarif-output=results/opengrep.json
+
     - name: Run Scorecard Analysis
       uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2  #v2.4.3
       with:
@@ -88,12 +95,28 @@ runs:
         repo_token: ${{ inputs.github_token }}
         ref: ${{ github.sha }}
 
-    - name: Install OpenGrep
+    - name: Fix SARIF for GitHub upload
+      if: env.SKIP_CHECKMARX != 'true'
       shell: bash
       run: |
-        # TODO: install in more secure way
-        curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
-        opengrep scan --config auto --taint-intrafile --sarif-output=results/opengrep.json
+        set -euo pipefail
+        IFS=$'\n\t'
+
+        # GitHub fails if artifactLocation.uri is empty
+        # Replace empty URIs with a placeholder file
+        if [ -f "./results/scorecard-results.sarif" ]; then
+          mv ./results/scorecard-results.sarif ./results/scorecard-results.sarif.orig
+          jq '.runs |= map(.results |= map(.locations |= map(if .physicalLocation.artifactLocation.uri == "" then .physicalLocation.artifactLocation.uri = "file:/README.md" else . end)))' ./results/scorecard-results.sarif.orig > ./results/scorecard-results.sarif.sarif
+          echo "Fixed empty artifactLocation URIs in SARIF file"
+
+          # Fix missing message text that causes newer codeql-action versions to fail
+          mv ./results/scorecard-results.sarif ./results/scorecard-results.sarif.tmp
+          jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' ./results/scorecard-results.sarif.tmp > ./results/scorecard-results.sarif
+          rm -f ./results/scorecard-results.sarif.tmp ./results/scorecard-results.sarif.orig
+          echo "Fixed missing message text in SARIF file"
+        else
+          echo "::warning::No SARIF file generated from scorecard scan"
+        fi
 
     - name: Upload trivy SARIF file
       uses: github/codeql-action/upload-sarif@ce729e4d353d580e6cacd6a8cf2921b72e5e310a
