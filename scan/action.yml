@@ -84,7 +84,7 @@ runs:
       run: |
         # TODO: install in more secure way
         curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
-        opengrep scan --config auto --taint-intrafile --sarif-output=results/opengrep.json
+        opengrep scan --config auto --taint-intrafile --sarif-output=results/opengrep.sarif
 
     - name: Run Scorecard Analysis
       uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2  #v2.4.3
@@ -104,7 +104,7 @@ runs:
 
         # GitHub fails if artifactLocation.uri is empty
         # Replace empty URIs with a placeholder file
-        if [ -f "./results/scorecard-results.sarif" ]; then
+        if [ -f "./results/scorecard-results.sarif.unprocessed" ]; then
           jq '(.. | select(.uri? == "no file associated with this alert" or .uri? == "")) .uri = "README.md"' ./results/scorecard-results.sarif.unprocessed | \
           jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' \
           > ./results/scorecard-results.sarif
