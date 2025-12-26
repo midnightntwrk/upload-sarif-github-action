@@ -22,19 +22,10 @@ inputs:
     description: "GitHub token for API calls (optional)"
     required: false
     default: ""
-  codeql_paths:
-    description: "Comma-separated list of directories to scan with CodeQL"
-    required: false
-    default: "."  # defaults to repo root
   # file-filter:
   #   description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
   #   required: false
   #   default: ''
-
-outputs:
-  sarif-file:
-    description: 'Path to generated SARIF files'
-    value: 'scan_reports'
 
 runs:
   using: 'composite'
@@ -55,13 +46,13 @@ runs:
         [ "${{ inputs.scan_typescript }}" = "true" ] && LANGS+=("javascript-typescript")
         [ "${{ inputs.scan_rust }}" = "true" ] && LANGS+=("rust")
         echo "languages=${LANGS[*]}" >> $GITHUB_OUTPUT
-        mkdir -p results
+        mkdir -p scan_reports
 
     - name: Run KICS Scan
       uses: checkmarx/kics-github-action@6b6fc1162a0f06704e4cca6e5f8e008ab20fabe5  #v2.1.16
       with:
         path: '.'
-        output_path: 'results'
+        output_path: 'scan_reports'
         output_formats: 'json,sarif'
         fail_on: high
         enable_comments: true
@@ -75,21 +66,21 @@ runs:
         scan-type: 'fs'
         scanners: 'vuln,secret,misconfig'
         format: 'sarif'
-        output: 'results/trivy-results.sarif'
+        output: 'scan_reports/trivy-results.sarif'
         #   severity: 'CRITICAL,HIGH,MEDIUM'
         trivy-config: trivy.yml
 
     - name: Run OpenGrep
       shell: bash
       run: |
-        # TODO: install in more secure way
-        curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/main/install.sh | bash
-        opengrep scan --config auto --taint-intrafile --sarif-output=results/opengrep.sarif
+        # TODO: setup renovate to bump this hash
+        curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/6753c7e1e3bcd0c35fbd88894af03213b4640df4/install.sh | bash
+        opengrep scan --config auto --taint-intrafile --sarif-output=scan_reports/opengrep.sarif
 
     - name: Run Scorecard Analysis
       uses: ossf/scorecard-action@99c09fe975337306107572b4fdf4db224cf8e2f2  #v2.4.3
       with:
-        results_file: results/scorecard-results.sarif.unprocessed
+        results_file: scan_reports/scorecard-results.sarif.unprocessed
         results_format: sarif
         publish_results: false
         repo_token: ${{ inputs.github_token }}
@@ -104,10 +95,10 @@ runs:
 
         # GitHub fails if artifactLocation.uri is empty
         # Replace empty URIs with a placeholder file
-        if [ -f "./results/scorecard-results.sarif.unprocessed" ]; then
-          jq '(.. | select(.uri? == "no file associated with this alert" or .uri? == "")) .uri = "README.md"' ./results/scorecard-results.sarif.unprocessed | \
+        if [ -f "./scan_reports/scorecard-results.sarif.unprocessed" ]; then
+          jq '(.. | select(.uri? == "no file associated with this alert" or .uri? == "")) .uri = "README.md"' ./scan_reports/scorecard-results.sarif.unprocessed | \
           jq '.runs[].results[] |= (if .message.text == null or .message.text == "" then .message.text = ("Security issue detected by " + .ruleId) else . end)' \
-          > ./results/scorecard-results.sarif
+          > ./scan_reports/scorecard-results.sarif
           echo "Fixed empty artifactLocation URIs in SARIF file"
         else
           echo "::warning:: No SARIF file generated from scorecard scan"
@@ -118,4 +109,4 @@ runs:
       if: success() || failure()
       continue-on-error: true
       with:
-        sarif_file: results
+        sarif_file: scan_reports
