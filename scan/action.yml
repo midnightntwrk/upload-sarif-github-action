@@ -116,7 +116,7 @@ runs:
       if: inputs.fail_severity != ''
       run: |
           FAIL=0
-          THRESHOLD="{{ inputs.fail_severity } }"
+          THRESHOLD="{{ inputs.fail_severity }}"
           THRESHOLD=$(echo "$THRESHOLD" | tr '[:lower:]' '[:upper:]')
           declare -A SEVERITY_MAP=(["NOTE"]=0 ["WARNING"]=1 ["LOW"]=1 ["MEDIUM"]=2 ["HIGH"]=3 ["ERROR"]=4 ["CRITICAL"]=5)
 
