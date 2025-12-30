@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test workflows for validation
 
 ### Features
+- Added scan action that uses open source scanners.
+- Added failure threshold to scan action to enable use on private repos.
 - Upload any SARIF 2.1.0 file to Checkmarx
 - Reusable across all Midnight repositories
 - Compatible with existing Checkmarx secrets
