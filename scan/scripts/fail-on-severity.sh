@@ -8,7 +8,7 @@ declare -A SEVERITY_MAP=(["NOTE"]=0 ["WARNING"]=1 ["LOW"]=1 ["MEDIUM"]=2 ["HIGH"
 
 for f in scan_reports/*.sarif; do
     # Extract all results and their severity
-    while read -r result; do
+    while IFS= read -r result; do
         # Try both fields: level and properties.severity
         level=$(echo "$result" | jq -r '.level // empty' | tr '[:lower:]' '[:upper:]')
         prop=$(echo "$result" | jq -r '.properties.severity // empty')
@@ -30,7 +30,7 @@ for f in scan_reports/*.sarif; do
         [ -n "$message" ] && echo "  Message: $message"
         FAIL=1
         fi
-    done < <(jq -c '.runs[].results[]?' "$f") 
+    done < <(jq -c '.runs[]?.results[]? // empty' "$f")
 done
 
 if [ $FAIL -eq 1 ]; then

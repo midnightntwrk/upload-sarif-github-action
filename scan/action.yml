@@ -41,6 +41,9 @@ runs:
   #   security-events: write
   #   statuses: write
   steps:
+    - name: Install cosign (used by OpenGrep)
+      uses: sigstore/cosign-installer@v3.7.0
+
     - name: Run OpenGrep
       shell: bash
       run: |
