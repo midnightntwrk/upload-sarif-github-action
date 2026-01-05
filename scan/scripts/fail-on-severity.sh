@@ -30,7 +30,7 @@ for f in scan_reports/*.sarif; do
         [ -n "$message" ] && echo "  Message: $message"
         FAIL=1
         fi
-    done
+    done < <(jq -c '.runs[].results[]?' "$f") 
 done
 
 if [ $FAIL -eq 1 ]; then
