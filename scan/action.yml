@@ -110,7 +110,7 @@ runs:
     # Upload SARIF artifacts for private repositories
     - name: Upload Trivy SARIF artifacts
       if: (success() || failure()) && github.event.repository.private == true
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
       with:
         name: sarif_reports
         path: scan_reports
