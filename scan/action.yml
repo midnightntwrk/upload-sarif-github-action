@@ -42,7 +42,7 @@ runs:
   #   statuses: write
   steps:
     - name: Install cosign (used by OpenGrep)
-      uses: sigstore/cosign-installer@v3.7.0
+      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad  #v4.0.0
 
     - name: Run OpenGrep
       shell: bash
