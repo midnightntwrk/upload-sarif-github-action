@@ -1,0 +1,21 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    'security:openssf-scorecard',
+    ':semanticCommits',
+  ],
+  configMigration: true,
+  customManagers: [
+    {
+      customType: 'regex',
+      description: "Update _version in bash scripts in actions",
+      managerFilePatterns: [
+        '/^action.yml$/',
+      ],
+      matchStrings: [
+        '#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+?)(?:\\s+depName=(?<depName>.+?))?\\s+packageName=(?<packageName>.+?)(?:\\s+versioning=(?<versioning>[a-z-]+?))?\\s+.+?(_VERSION|_VER|_version)=(?<currentValue>.+?)\\s',
+      ],
+    },
+  ],
+}
