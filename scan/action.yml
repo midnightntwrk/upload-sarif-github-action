@@ -120,4 +120,4 @@ runs:
       if: inputs.fail_severity != ''
       env:
         INPUT_SEVERITY: ${{ inputs.fail_severity }}
-      run: ./scan/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
+      run: ${{ github.action_path }}/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
