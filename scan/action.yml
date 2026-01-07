@@ -61,7 +61,7 @@ runs:
         output_formats: 'json,sarif'
         fail_on: high
         enable_comments: true
-        exclude_paths: '.git,node_modules,dist,build'
+        exclude_paths: '.git,node_modules,dist,build,target'
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8
@@ -71,7 +71,6 @@ runs:
         scanners: 'vuln,secret,misconfig'
         format: 'sarif'
         output: 'scan_reports/trivy-results.sarif'
-        #   severity: 'CRITICAL,HIGH,MEDIUM'
         trivy-config: trivy.yml
 
     - name: Run Scorecard Analysis
