@@ -80,8 +80,7 @@ runs:
         results_file: scan_reports/scorecard-results.sarif.unprocessed
         results_format: sarif
         publish_results: false
-        repo_token: ${{ inputs.github_token }}
-        ref: ${{ github.sha }}
+        repo_token: ${{ inputs.github_token || github.token }}
 
     - name: Fix SARIF for GitHub upload
       shell: bash
