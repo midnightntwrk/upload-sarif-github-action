@@ -39,10 +39,6 @@ inputs:
     description: 'Upload SARIF to GitHub Security'
     required: false
     default: 'true'
-  upload-to-checkmarx:
-    description: 'Upload SARIF to Checkmarx via BYOR'
-    required: false
-    default: 'true'
   scs-repo-token:
     description: 'GitHub token for SCS scanning (defaults to github.token for public repos)'
     required: false
@@ -240,25 +236,6 @@ runs:
       uses: github/codeql-action/upload-sarif@755f44910c12a3d7ca0d8c6e42c048b3362f7cec  # v3.30.8
       with:
         sarif_file: cx_result.sarif
-      continue-on-error: true
-
-    - name: Upload SARIF to Checkmarx BYOR
-      if: ${{ inputs.upload-to-checkmarx == 'true' && hashFiles('cx_result.sarif') != '' }}
-      shell: bash
-      env:
-        INPUT_PROJECT_NAME: ${{ inputs.project-name }}
-      run: |
-        set -euo pipefail
-        IFS=$'\n\t'
-
-        echo "Uploading SARIF to Checkmarx via BYOR..."
-        echo "Project: ${INPUT_PROJECT_NAME}"
-
-        if ./cx utils import --project-name "${INPUT_PROJECT_NAME}" --import-file-path "cx_result.sarif"; then
-          echo "✅ SARIF successfully uploaded to Checkmarx"
-        else
-          echo "::warning::Failed to upload SARIF to Checkmarx BYOR"
-        fi
       continue-on-error: true
 
     - name: Cleanup
