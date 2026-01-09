@@ -116,16 +116,13 @@ runs:
         path: scan_reports
 
     - name: Post SARIF findings in the pull request
-      if: github.event_name == 'pull_request'
-      uses: sett-and-hive/sarif-to-comment-action@v2.0.1
-      with:
-        token: ${{ inputs.github_token }}
-        repository: ${{ github.repository }}
-        branch: ${{ github.head_ref }}
-        pr-number: ${{ github.event.number }}
-        sarif-file: scan_reports/scorecard-results.sarif
-        title: Scorecard
-        dry-run: false
+      if: github.event_name == 'pull_request' && inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.number }}
+      run: ${{ github.action_path }}/scripts/post-sarif-to-pr.sh "$GITHUB_TOKEN" "$REPOSITORY" "$PR_NUMBER" "scan_reports"
 
     - name: Fail on severity
       shell: bash
