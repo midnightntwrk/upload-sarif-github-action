@@ -29,5 +29,4 @@ jobs:
       - name: Scan code
         uses: ./scan
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_severity: "high"
