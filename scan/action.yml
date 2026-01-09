@@ -49,7 +49,7 @@ runs:
       run: |
         mkdir -p scan_reports
         # renovate: datasource=github-releases packageName=opengrep/opengrep
-        opengrep_version="71c379ba378f00c36a140b8b11253599d699694e"
+        opengrep_version="47b8b814b460f588b2b2199698b3c2745dbdc4d8"  # v1.14.1
         curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/${opengrep_version}/install.sh | bash
         export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
 
@@ -120,4 +120,4 @@ runs:
       if: inputs.fail_severity != ''
       env:
         INPUT_SEVERITY: ${{ inputs.fail_severity }}
-      run: ./scan/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
+      run: ${{ github.action_path }}/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
