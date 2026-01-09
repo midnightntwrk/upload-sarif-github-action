@@ -115,6 +115,15 @@ runs:
         name: sarif_reports
         path: scan_reports
 
+    - name: Post SARIF findings in the pull request
+      if: github.event_name == 'pull_request' && inputs.github_token != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.number }}
+      run: ${{ github.action_path }}/scripts/post-sarif-to-pr.sh "$GITHUB_TOKEN" "$REPOSITORY" "$PR_NUMBER" "scan_reports"
+
     - name: Fail on severity
       shell: bash
       if: inputs.fail_severity != ''
