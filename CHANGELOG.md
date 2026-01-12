@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Update OpenGrep to v1.14.1 to fix Clojure rule parse error ([#46](https://github.com/midnightntwrk/upload-sarif-github-action/issues/46))
+- Fix fail-on-severity script path to use `${{ github.action_path }}` for correct resolution in composite actions
+
 ### Added
 - Initial implementation of SARIF upload to Checkmarx via BYOR
 - Support for cargo-audit SARIF files (primary use case)
@@ -17,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test workflows for validation
 
 ### Features
+- Added scan action that uses open source scanners.
+- Added failure threshold to scan action to enable use on private repos.
 - Upload any SARIF 2.1.0 file to Checkmarx
 - Reusable across all Midnight repositories
 - Compatible with existing Checkmarx secrets
