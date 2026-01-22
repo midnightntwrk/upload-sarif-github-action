@@ -9,6 +9,7 @@ Fork PRs cannot access repository secrets (GitHub security feature), which preve
 ## Solution
 
 This action works with `pull_request_target` to safely scan fork PRs:
+
 1. **No Checkout**: The action does NOT checkout code locally
 2. **Remote Scan**: Checkmarx CLI fetches code directly from GitHub using the repo URL
 3. **Secure**: `pull_request_target` provides secret access without running untrusted code
@@ -36,7 +37,7 @@ jobs:
 
       # While upload-sarif-github-action is private:
       - name: Checkout Upload action repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  #v6.0.1
         with:
           repository: midnightntwrk/upload-sarif-github-action
           ref: main  # or specific commit SHA
