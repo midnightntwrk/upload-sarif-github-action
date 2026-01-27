@@ -31,7 +31,7 @@ jobs:
       # TODO: Remove this checkout step once upload-sarif-github-action repo is made public
       # Currently required because GitHub Actions can't directly reference private repos
       - name: Checkout Upload action repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  #v6.0.2
         with:
           repository: midnightntwrk/upload-sarif-github-action
           ref: ${{ github.event.pull_request.head.sha }}
