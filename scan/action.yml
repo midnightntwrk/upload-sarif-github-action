@@ -6,18 +6,6 @@ branding:
   color: 'blue'
 
 inputs:
-  scan_actions:
-    description: "Scan GitHub Actions code"
-    required: false
-    default: "true"
-  scan_typescript:
-    description: "Scan JavaScript/TypeScript code"
-    required: false
-    default: "true"
-  scan_rust:
-    description: "Scan Rust code"
-    required: false
-    default: "true"
   github_token:
     description: "GitHub token for API calls (optional)"
     required: false
@@ -26,10 +14,6 @@ inputs:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
     default: "critical"
-  # file-filter:
-  #   description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
-  #   required: false
-  #   default: ''
 
 runs:
   using: 'composite'
@@ -80,8 +64,7 @@ runs:
         results_file: scan_reports/scorecard-results.sarif.unprocessed
         results_format: sarif
         publish_results: false
-        repo_token: ${{ inputs.github_token }}
-        ref: ${{ github.sha }}
+        repo_token: ${{ inputs.github_token || github.token }}
 
     - name: Fix SARIF for GitHub upload
       shell: bash
