@@ -34,6 +34,6 @@ jobs:
 
       # Run the current PR's scan action
       - name: Scan code
-        uses: ./scan
+        uses: ./
         with:
           fail_severity: "high"
