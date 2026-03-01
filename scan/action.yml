@@ -6,18 +6,6 @@ branding:
   color: 'blue'
 
 inputs:
-  scan_actions:
-    description: "Scan GitHub Actions code"
-    required: false
-    default: "true"
-  scan_typescript:
-    description: "Scan JavaScript/TypeScript code"
-    required: false
-    default: "true"
-  scan_rust:
-    description: "Scan Rust code"
-    required: false
-    default: "true"
   github_token:
     description: "GitHub token for API calls (optional)"
     required: false
@@ -26,10 +14,6 @@ inputs:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
     default: "critical"
-  # file-filter:
-  #   description: 'File exclusion patterns (comma-separated glob patterns, e.g. !*.json,!test/*)'
-  #   required: false
-  #   default: ''
 
 runs:
   using: 'composite'
@@ -43,14 +27,14 @@ runs:
   #   statuses: write
   steps:
     - name: Install cosign (used by OpenGrep)
-      uses: sigstore/cosign-installer@v3.7.0
+      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad  #v4.0.0
 
     - name: Run OpenGrep
       shell: bash
       run: |
         mkdir -p scan_reports
         # renovate: datasource=github-releases packageName=opengrep/opengrep
-        opengrep_version="71c379ba378f00c36a140b8b11253599d699694e"
+        opengrep_version="47b8b814b460f588b2b2199698b3c2745dbdc4d8"  # v1.14.1
         curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/${opengrep_version}/install.sh | bash
         export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
 
@@ -61,7 +45,7 @@ runs:
         output_path: 'scan_reports'
         output_formats: 'json,sarif'
         fail_on: high
-        enable_comments: true
+        enable_comments: ${{ github.event_name == 'pull_request' }}
         exclude_paths: '.git,node_modules,dist,build'
 
     - name: Run Trivy vulnerability scanner
@@ -97,7 +81,7 @@ runs:
     # Upload SARIF artifacts for private repositories
     - name: Upload Trivy SARIF artifacts
       if: (success() || failure()) && github.event.repository.private == true
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  #v6.0.0
       with:
         name: sarif_reports
         path: scan_reports
@@ -107,4 +91,4 @@ runs:
       if: inputs.fail_severity != ''
       env:
         INPUT_SEVERITY: ${{ inputs.fail_severity }}
-      run: ./scan/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
+      run: ${{ github.action_path }}/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
