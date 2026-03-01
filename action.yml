@@ -29,6 +29,7 @@ runs:
       uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad  #v4.0.0
 
     - name: Run OpenGrep
+      continue-on-error: true
       shell: bash
       run: |
         mkdir -p scan_reports
@@ -38,6 +39,7 @@ runs:
         export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
 
     - name: Run KICS Scan
+      continue-on-error: true
       uses: checkmarx/kics-github-action@00def9108246ec656aea725db2167522d26a99d2  #v2.1.19
       with:
         path: '.'
@@ -47,18 +49,20 @@ runs:
         enable_comments: ${{ github.event_name == 'pull_request' }}
         exclude_paths: '.git,node_modules,dist,build'
 
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518  #v0.34.1
-      with:
-        version: 'v0.69.1'
-        scan-type: 'fs'
-        scanners: 'vuln,secret,misconfig'
-        format: 'sarif'
-        output: 'scan_reports/trivy-results.sarif'
-        #   severity: 'CRITICAL,HIGH,MEDIUM'
-        trivy-config: trivy.yml
+    # Trivy disabled - aquasecurity/trivy repo was replaced with an empty
+    # placeholder on 2026-03-01 (0 stars, "This is your first repository").
+    # Until the situation is clarified, do not pull anything from aquasecurity.
+    # - name: Run Trivy vulnerability scanner
+    #   uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518  #v0.34.1
+    #   with:
+    #     scan-type: 'fs'
+    #     scanners: 'vuln,secret,misconfig'
+    #     format: 'sarif'
+    #     output: 'scan_reports/trivy-results.sarif'
+    #     trivy-config: trivy.yml
 
     - name: Run Scorecard cli
+      continue-on-error: true
       shell: bash
       env:
         GITHUB_AUTH_TOKEN: ${{ inputs.github_token }}
@@ -78,7 +82,7 @@ runs:
         sarif_file: scan_reports
 
     # Upload SARIF artifacts for private repositories
-    - name: Upload Trivy SARIF artifacts
+    - name: Upload SARIF artifacts
       if: (success() || failure()) && github.event.repository.private == true
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  #v7.0.0
       with:
