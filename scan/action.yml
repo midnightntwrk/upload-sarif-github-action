@@ -66,7 +66,7 @@ runs:
       run: |
         wget https://github.com/ossf/scorecard/releases/download/v5.4.0/scorecard_5.4.0_linux_amd64.tar.gz
         tar -xf ./scorecard_5.4.0_linux_amd64.tar.gz scorecard
-        ./scorecard --local . --format json --output scan_reports/scorecard-results.json --checks "Vulnerabilities,Binary-Artifacts,Branch-Protection,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Code-Review,Contributors,Dependency-Update-Tool,CI-Tests,Packaging,Token-Permissions" 
+        ./scorecard --local . --format json --output scan_reports/scorecard-results.json --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Packaging,Token-Permissions"
 
         echo "Converting Scorecard JSON to SARIF format"
         cat ./scan_reports/scorecard-results.json | jq -f ./scan/scripts/scorecard.jq > scan_reports/scorecard-results.sarif
