@@ -44,7 +44,7 @@ runs:
         output_path: 'scan_reports'
         output_formats: 'json,sarif'
         fail_on: high
-        enable_comments: true
+        enable_comments: ${{ github.event_name == 'pull_request' }}
         exclude_paths: '.git,node_modules,dist,build'
 
     - name: Run Trivy vulnerability scanner

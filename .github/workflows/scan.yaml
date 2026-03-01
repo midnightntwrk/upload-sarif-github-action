@@ -16,6 +16,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    needs: scan
+    steps:
+      - run: echo backward compatible job till shielded-iac is updated.
+
+  scan:
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
