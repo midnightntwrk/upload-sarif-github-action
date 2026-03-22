@@ -40,7 +40,7 @@ runs:
 
     - name: Run KICS Scan
       continue-on-error: true
-      uses: checkmarx/kics-github-action@00def9108246ec656aea725db2167522d26a99d2  #v2.1.19
+      uses: checkmarx/kics-github-action@05aa5eb70eede1355220f4ca5238d96b397e30a6  #v2.1.20
       with:
         path: '.'
         output_path: 'scan_reports'
