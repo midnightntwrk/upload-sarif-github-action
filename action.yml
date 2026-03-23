@@ -26,7 +26,7 @@ runs:
   #   statuses: write
   steps:
     - name: Install cosign (used by OpenGrep)
-      uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad  #v4.0.0
+      uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22  #v4.1.0
 
     - name: Run OpenGrep
       continue-on-error: true
@@ -34,7 +34,7 @@ runs:
       run: |
         mkdir -p scan_reports
         # renovate: datasource=github-releases packageName=opengrep/opengrep
-        opengrep_version="47b8b814b460f588b2b2199698b3c2745dbdc4d8"  # v1.14.1
+        opengrep_version="4f7a31eb730a9c4e766ba52c0a12f610b0ca9e66"  # v1.16.5
         curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/${opengrep_version}/install.sh | bash
         export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
 
@@ -75,7 +75,7 @@ runs:
         cat ./scan_reports/scorecard-results.json | jq -f ${{ github.action_path }}/scripts/scorecard.jq > scan_reports/scorecard-results.sarif
 
     - name: Upload SARIF files
-      uses: github/codeql-action/upload-sarif@5e7a52feb2a3dfb87f88be2af33b9e2275f48de6  #v2.24.2
+      uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14  #v2.25.0
       if: (success() || failure()) && github.event.repository.private == false
       continue-on-error: true
       with:
