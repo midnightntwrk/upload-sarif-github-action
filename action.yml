@@ -38,16 +38,18 @@ runs:
         curl -fsSL https://raw.githubusercontent.com/opengrep/opengrep/${opengrep_version}/install.sh | bash
         export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
 
-    - name: Run KICS Scan
-      continue-on-error: true
-      uses: checkmarx/kics-github-action@05aa5eb70eede1355220f4ca5238d96b397e30a6  #v2.1.20
-      with:
-        path: '.'
-        output_path: 'scan_reports'
-        output_formats: 'json,sarif'
-        fail_on: high
-        enable_comments: ${{ github.event_name == 'pull_request' }}
-        exclude_paths: '.git,node_modules,dist,build'
+    # KICS disabled - checkmarx/kics-github-action repo was removed on or
+    # before 2026-03-23 (404). The action is no longer available on GitHub.
+    # - name: Run KICS Scan
+    #   continue-on-error: true
+    #   uses: checkmarx/kics-github-action@05aa5eb70eede1355220f4ca5238d96b397e30a6  #v2.1.20
+    #   with:
+    #     path: '.'
+    #     output_path: 'scan_reports'
+    #     output_formats: 'json,sarif'
+    #     fail_on: high
+    #     enable_comments: ${{ github.event_name == 'pull_request' }}
+    #     exclude_paths: '.git,node_modules,dist,build'
 
     # Trivy disabled - aquasecurity/trivy repo was replaced with an empty
     # placeholder on 2026-03-01 (0 stars, "This is your first repository").
