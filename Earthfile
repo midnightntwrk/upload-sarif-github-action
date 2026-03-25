@@ -84,9 +84,11 @@ checkov-requirements:
     FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
     RUN pip install --no-cache-dir pip-tools
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.2.510
-    RUN echo "checkov==${CHECKOV_VERSION}" > /tmp/requirements.in && \
-        pip-compile --generate-hashes --strip-extras --output-file=/tmp/requirements.txt /tmp/requirements.in
+    FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
+    RUN pip install --no-cache-dir --require-hashes -r /dev/stdin <<EOF
+pip-tools==7.4.1 \
+    --hash=sha256:<actual-hash-here>
+EOF
     SAVE ARTIFACT /tmp/requirements.txt AS LOCAL requirements.txt
 
 checkov:
