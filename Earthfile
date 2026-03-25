@@ -36,8 +36,8 @@ opengrep:
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
 
-    RUN opengrep scan --config auto --taint-intrafile --dataflow-traces --sarif-output=/output/opengrep.sarif \
-        || true
+    RUN opengrep scan --config auto --taint-intrafile --dataflow-traces --sarif-output=/output/opengrep.sarif; \
+        rc=$?; [ $rc -le 1 ] || exit $rc
 
     SAVE ARTIFACT /output/opengrep.sarif AS LOCAL scan_reports/opengrep.sarif
 
@@ -72,8 +72,8 @@ scorecard:
 
     RUN mkdir -p /output && \
         scorecard --local . --format json --output /output/scorecard-results.json \
-            --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions" \
-        || true
+            --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions"; \
+        rc=$?; [ $rc -le 1 ] || exit $rc
 
     RUN jq -f /scripts/scorecard.jq /output/scorecard-results.json > /output/scorecard-results.sarif
 
@@ -82,13 +82,14 @@ scorecard:
 checkov-requirements:
     # renovate: datasource=docker packageName=python
     FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
-    RUN pip install --no-cache-dir pip-tools
+    # renovate: datasource=pypi packageName=pip-tools
+    ARG PIP_TOOLS_VERSION=7.4.1
+    RUN pip install --no-cache-dir --require-hashes --no-deps pip-tools==${PIP_TOOLS_VERSION} \
+        --hash=sha256:4c690e5fbae2f21e87843e89c26191f0d9454f362d8acdbd695716493ec8b3a9
     # renovate: datasource=pypi packageName=checkov
-    FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
-    RUN pip install --no-cache-dir --require-hashes -r /dev/stdin <<EOF
-pip-tools==7.4.1 \
-    --hash=sha256:<actual-hash-here>
-EOF
+    ARG CHECKOV_VERSION=3.2.510
+    RUN echo "checkov==${CHECKOV_VERSION}" > /tmp/requirements.in && \
+        pip-compile --generate-hashes --strip-extras --output-file=/tmp/requirements.txt /tmp/requirements.in
     SAVE ARTIFACT /tmp/requirements.txt AS LOCAL requirements.txt
 
 checkov:

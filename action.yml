@@ -40,6 +40,16 @@ runs:
       run: /tmp/earth "${{ github.action_path }}+scan"
       working-directory: ${{ github.workspace }}
 
+    - name: Verify scan output
+      shell: bash
+      run: |
+        count=$(find scan_reports -name '*.sarif' 2>/dev/null | wc -l)
+        if [ "$count" -eq 0 ]; then
+          echo "::error::No SARIF files produced — all scanners may have failed"
+          exit 1
+        fi
+        echo "Found $count SARIF file(s)"
+
     - name: Upload SARIF files
       uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14  #v2.25.0
       if: (success() || failure()) && github.event.repository.private == false
