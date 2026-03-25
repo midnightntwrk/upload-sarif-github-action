@@ -1,0 +1,9 @@
+compact: true
+quiet: true
+skip-path:
+  - .git
+  - node_modules
+  - scan_reports
+soft-fail: true
+download-external-modules: false
+output: sarif

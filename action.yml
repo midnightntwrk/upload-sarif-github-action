@@ -25,57 +25,30 @@ runs:
   #   security-events: write
   #   statuses: write
   steps:
-    - name: Install cosign (used by OpenGrep)
-      uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22  #v4.1.0
-
-    - name: Run OpenGrep
-      continue-on-error: true
+    - name: Install EarthBuild
       shell: bash
       run: |
-        mkdir -p scan_reports
-        # renovate: datasource=github-releases packageName=opengrep/opengrep
-        opengrep_version="4f7a31eb730a9c4e766ba52c0a12f610b0ca9e66"  # v1.16.5
-        curl -fsSL "https://raw.githubusercontent.com/opengrep/opengrep/${opengrep_version}/install.sh" -o /tmp/opengrep-install.sh
-        echo "5e5fdd35d0fff5fb7a7141b45e1f167abc7d1026b43bd2d31fa6611c515fd649  /tmp/opengrep-install.sh" | sha256sum -c --strict
-        bash /tmp/opengrep-install.sh
-        export PATH="$HOME/.opengrep/cli/latest:$PATH" && opengrep scan --config auto --taint-intrafile --dataflow-traces --force-color --sarif-output=scan_reports/opengrep.sarif
+        # renovate: datasource=github-releases packageName=EarthBuild/earthbuild
+        earthbuild_version="v0.8.17"
+        curl -fsSL -o /tmp/earth "https://github.com/EarthBuild/earthbuild/releases/download/${earthbuild_version}/earth-linux-amd64"
+        echo "85b7f31020be220493c1ef89fe4e976985a72e54dd12b7dfcf17544c8d4fd880  /tmp/earth" | sha256sum -c --strict
+        chmod 0755 /tmp/earth
 
-    # KICS disabled - checkmarx/kics-github-action repo was compromised on or
-    # around 2026-03-23 ( https://www.wiz.io/blog/teampcp-attack-kics-github-action ). The action is back but we don't know what further compromises have happened - not to be trusted for now.
-    # - name: Run KICS Scan
-    #   continue-on-error: true
-    #   uses: checkmarx/kics-github-action@05aa5eb70eede1355220f4ca5238d96b397e30a6  #v2.1.20
-    #   with:
-    #     path: '.'
-    #     output_path: 'scan_reports'
-    #     output_formats: 'json,sarif'
-    #     fail_on: high
-    #     enable_comments: ${{ github.event_name == 'pull_request' }}
-    #     exclude_paths: '.git,node_modules,dist,build'
-
-    # - name: Run Trivy vulnerability scanner
-    #   continue-on-error: true
-    #   uses: aquasecurity/trivy-action@e368e328979b113139d6f9068e03accaed98a518  #v0.34.1
-    #   with:
-    #     scan-type: 'fs'
-    #     scanners: 'vuln,secret,misconfig'
-    #     format: 'sarif'
-    #     output: 'scan_reports/trivy-results.sarif'
-    #     trivy-config: trivy.yml
-
-    - name: Run Scorecard cli
+    - name: Run scanners (parallel)
       continue-on-error: true
       shell: bash
-      env:
-        GITHUB_AUTH_TOKEN: ${{ inputs.github_token }}
-      run: |
-        wget -q https://github.com/ossf/scorecard/releases/download/v5.4.0/scorecard_5.4.0_linux_amd64.tar.gz
-        echo "e5183aeaa5aa548fbb7318a6deb3e1038be0ef9aca24e655422ae88dfbe67502  scorecard_5.4.0_linux_amd64.tar.gz" | sha256sum -c --strict
-        tar -xf ./scorecard_5.4.0_linux_amd64.tar.gz scorecard
-        ./scorecard --local . --format json --output scan_reports/scorecard-results.json --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions"
+      run: /tmp/earth "${{ github.action_path }}+scan"
+      working-directory: ${{ github.workspace }}
 
-        echo "Converting Scorecard JSON to SARIF format"
-        cat ./scan_reports/scorecard-results.json | jq -f ${{ github.action_path }}/scripts/scorecard.jq > scan_reports/scorecard-results.sarif
+    - name: Verify scan output
+      shell: bash
+      run: |
+        count=$(find scan_reports -name '*.sarif' 2>/dev/null | wc -l)
+        if [ "$count" -eq 0 ]; then
+          echo "::error::No SARIF files produced — all scanners may have failed"
+          exit 1
+        fi
+        echo "Found $count SARIF file(s)"
 
     - name: Upload SARIF files
       uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14  #v2.25.0
