@@ -37,3 +37,4 @@ jobs:
         uses: ./
         with:
           fail_severity: "high"
+          scorecard_checks: "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions"

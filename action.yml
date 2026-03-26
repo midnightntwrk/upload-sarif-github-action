@@ -10,6 +10,10 @@ inputs:
     description: "GitHub token for API calls (optional)"
     required: false
     default: ""
+  scorecard_checks:
+    description: "Comma-separated list of Scorecard checks to run. If empty, all checks run. See https://github.com/ossf/scorecard#checks for available checks."
+    required: false
+    default: ""
   fail_severity:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
@@ -68,11 +72,16 @@ runs:
       shell: bash
       env:
         GITHUB_AUTH_TOKEN: ${{ inputs.github_token }}
+        SCORECARD_CHECKS: ${{ inputs.scorecard_checks }}
       run: |
         wget -q https://github.com/ossf/scorecard/releases/download/v5.4.0/scorecard_5.4.0_linux_amd64.tar.gz
         echo "e5183aeaa5aa548fbb7318a6deb3e1038be0ef9aca24e655422ae88dfbe67502  scorecard_5.4.0_linux_amd64.tar.gz" | sha256sum -c --strict
         tar -xf ./scorecard_5.4.0_linux_amd64.tar.gz scorecard
-        ./scorecard --local . --format json --output scan_reports/scorecard-results.json --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions"
+        CHECKS_ARG=""
+        if [ -n "$SCORECARD_CHECKS" ]; then
+          CHECKS_ARG="--checks $SCORECARD_CHECKS"
+        fi
+        ./scorecard --local . --format json --output scan_reports/scorecard-results.json $CHECKS_ARG
 
         echo "Converting Scorecard JSON to SARIF format"
         cat ./scan_reports/scorecard-results.json | jq -f ${{ github.action_path }}/scripts/scorecard.jq > scan_reports/scorecard-results.sarif
