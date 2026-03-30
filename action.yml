@@ -10,6 +10,10 @@ inputs:
     description: "GitHub token for API calls (optional)"
     required: false
     default: ""
+  scorecard_checks:
+    description: "Comma-separated list of Scorecard checks to run. If empty, all checks run. See https://github.com/ossf/scorecard#checks for available checks."
+    required: false
+    default: ""
   fail_severity:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
