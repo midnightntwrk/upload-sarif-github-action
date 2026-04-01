@@ -6,8 +6,9 @@ user-source:
 
 scan:
     LOCALLY
+    ARG SCORECARD_CHECKS
     BUILD +opengrep
-    BUILD +scorecard
+    BUILD +scorecard --SCORECARD_CHECKS="$SCORECARD_CHECKS"
     BUILD +checkov
 
 opengrep:
@@ -49,6 +50,7 @@ scorecard:
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
     ARG SCORECARD_VERSION=5.4.0
+    ARG SCORECARD_CHECKS
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
@@ -71,8 +73,11 @@ scorecard:
     USER scanner
 
     RUN mkdir -p /output && \
-        scorecard --local . --format json --output /output/scorecard-results.json \
-            --checks "Vulnerabilities,Binary-Artifacts,Dangerous-Workflow,Security-Policy,License,Pinned-Dependencies,Token-Permissions"; \
+        CHECKS_ARG="" && \
+        if [ -n "$SCORECARD_CHECKS" ]; then \
+            CHECKS_ARG="--checks $SCORECARD_CHECKS"; \
+        fi && \
+        scorecard --local . --format json --output /output/scorecard-results.json $CHECKS_ARG; \
         rc=$?; [ $rc -le 1 ] || exit $rc
 
     RUN jq -f /scripts/scorecard.jq /output/scorecard-results.json > /output/scorecard-results.sarif
