@@ -41,7 +41,9 @@ runs:
     - name: Run scanners (parallel)
       continue-on-error: true
       shell: bash
-      run: /tmp/earth "${{ github.action_path }}+scan" --SCORECARD_CHECKS="${{ inputs.scorecard_checks }}"
+      env:
+        SCORECARD_CHECKS: ${{ inputs.scorecard_checks }}
+      run: /tmp/earth "${{ github.action_path }}+scan" --SCORECARD_CHECKS="$SCORECARD_CHECKS"
       working-directory: ${{ github.workspace }}
 
     - name: Verify scan output
