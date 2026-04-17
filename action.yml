@@ -46,6 +46,23 @@ runs:
       run: /tmp/earth "${{ github.action_path }}+scan" --SCORECARD_CHECKS="$SCORECARD_CHECKS"
       working-directory: ${{ github.workspace }}
 
+    - name: Collect SARIF files
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        # EarthBuild's SAVE ARTIFACT AS LOCAL saves relative to the Earthfile's
+        # directory, so SARIF files land in the action's directory. Copy them
+        # into the workspace so subsequent steps (upload, fail-on-severity) find
+        # them. When the action is used from its own repo, action_path equals
+        # the workspace and this is a no-op.
+        mkdir -p scan_reports
+        src="$(realpath "$ACTION_PATH/scan_reports" 2>/dev/null || true)"
+        dst="$(realpath scan_reports)"
+        if [ -n "$src" ] && [ -d "$src" ] && [ "$src" != "$dst" ]; then
+          cp -r "$src/." scan_reports/
+        fi
+
     - name: Verify scan output
       shell: bash
       run: |
