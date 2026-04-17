@@ -1,5 +1,5 @@
 # Security scan workflow using open source scanners
-# Runs OpenGrep, KICS, and Scorecard with results uploaded to GitHub Security
+# Runs OpenGrep, Checkov, and Scorecard with results uploaded to GitHub Security
 
 name: Security Scan
 
