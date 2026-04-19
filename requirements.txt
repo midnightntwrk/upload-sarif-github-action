@@ -433,9 +433,9 @@ checkov==3.2.510 \
     --hash=sha256:36c3ce1982d46cc635438d33a3a86ac98349557f202d9cdd82c5aba8d7079689 \
     --hash=sha256:db065e2d3257440a9626543184e2f89ba04779b51757f3db65e0af3f1961e538
     # via -r /tmp/requirements.in
-click==8.3.1 \
-    --hash=sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a \
-    --hash=sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6
+click==8.3.2 \
+    --hash=sha256:14162b8b3b3550a7d479eafa77dfd3c38d9dc8951f6f69c78913a8f9a7540fd5 \
+    --hash=sha256:1924d2c27c5653561cd2cae4548d1406039cb79b858b747cfea24924bbc1616d
     # via
     #   checkov
     #   click-option-group
