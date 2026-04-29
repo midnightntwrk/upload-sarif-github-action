@@ -11,6 +11,9 @@ repos).
 - ~~**KICS**~~ - Disabled: [supply chain compromise](https://www.wiz.io/blog/teampcp-attack-kics-github-action) of checkmarx/kics-github-action (2026-03-23)
 - ~~**Trivy**~~ - Disabled: potential further compromise risk
 - **Scorecard** - Supply chain security
+- **[zizmor]** - GitHub Actions static analysis (run offline)
+
+[zizmor]: https://github.com/zizmorcore/zizmor
 
 ## Usage
 
