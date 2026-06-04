@@ -7,9 +7,13 @@ repos).
 ## Scanners
 
 - **OpenGrep** - SAST (taint analysis, dataflow tracing)
-- **KICS** - Infrastructure-as-Code misconfiguration
-- **Trivy** - Vulnerabilities, secrets, misconfigurations
+- **Checkov** - Infrastructure-as-Code misconfiguration (via EarthBuild)
+- ~~**KICS**~~ - Disabled: [supply chain compromise](https://www.wiz.io/blog/teampcp-attack-kics-github-action) of checkmarx/kics-github-action (2026-03-23)
+- ~~**Trivy**~~ - Disabled: potential further compromise risk
 - **Scorecard** - Supply chain security
+- **[zizmor]** - GitHub Actions static analysis (run offline)
+
+[zizmor]: https://github.com/zizmorcore/zizmor
 
 ## Usage
 
@@ -42,22 +46,23 @@ jobs:
 
 ## Inputs
 
-| Input           | Description              | Required | Default      |
-| --------------- | ------------------------ | -------- | ------------ |
-| `github_token`  | GitHub token for API     | No       | github.token |
-| `fail_severity` | Min severity to fail CI  | No       | `critical`   |
+| Input           | Description             | Required | Default    |
+| --------------- | ----------------------- | -------- | ---------- |
+| `fail_severity` | Min severity to fail CI | No       | `critical` |
 
 `fail_severity` accepts: critical, high, medium.
 Must be set on private repos.
 
 ## How it works
 
-1. Runs all four scanners, collecting SARIF in
-   `scan_reports/`
-2. Fixes known SARIF issues (empty URIs from Scorecard)
-3. Uploads to GitHub Security tab (public repos) or as
+1. Installs [EarthBuild](https://github.com/EarthBuild/earthbuild)
+   (hash-verified)
+2. Runs all scanners **in parallel** inside isolated containers
+   via `earth +scan` — no scanner has access to runner secrets
+3. Collects SARIF results in `scan_reports/`
+4. Uploads to GitHub Security tab (public repos) or as
    build artifacts (private repos)
-4. Optionally fails the build if findings meet or exceed
+5. Optionally fails the build if findings meet or exceed
    the configured severity threshold
 
 ## Contributing
