@@ -27,6 +27,9 @@ and this project adheres to
 
 ### Added
 
+- zizmor scanner for GitHub Actions workflows and composite
+  actions, run in offline mode inside its own container so
+  it never sees the runner's `GITHUB_TOKEN`
 - Scan action using open source scanners
   (OpenGrep, KICS, Trivy, Scorecard)
 - Severity threshold to fail CI on private repos
