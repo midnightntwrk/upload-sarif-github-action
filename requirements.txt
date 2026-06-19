@@ -445,9 +445,9 @@ click-option-group==0.5.9 \
     --hash=sha256:ad2599248bd373e2e19bec5407967c3eec1d0d4fc4a5e77b08a0481e75991080 \
     --hash=sha256:f94ed2bc4cf69052e0f29592bd1e771a1789bd7bfc482dd0bc482134aff95823
     # via cloudsplaining
-cloudsplaining==0.7.0 \
-    --hash=sha256:2d8a1d1a3261368a39359bb23aa7d6ac9add274728ff24877b710cdfa96d96af \
-    --hash=sha256:8e93c7b1671c8353f520627cdf7917ec543581c9b9936b3d344817bb4747174e
+cloudsplaining==0.9.1 \
+    --hash=sha256:14ef4f786144b8a2147372aeaa810822dc70f75d3d7c53dd965a12d1a1167cb9 \
+    --hash=sha256:e1dd786120313e737a5a7b62dc8a59c571434173974fb5fe038f9e8570588cc5
     # via checkov
 colorama==0.4.6 \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
