@@ -27,6 +27,13 @@ and this project adheres to
 
 ### Added
 
+- Trivy vulnerability scanner re-enabled as a hash-pinned
+  binary release inside its own container (the previously
+  disabled aquasecurity GitHub action is not used)
+- gitleaks secret scanner (working-tree scan, SARIF output)
+- `skip_<scanner>_scan` inputs to skip any individual
+  scanner (opengrep, scorecard, checkov, zizmor, trivy,
+  gitleaks)
 - zizmor scanner for GitHub Actions workflows and composite
   actions, run in offline mode inside its own container so
   it never sees the runner's `GITHUB_TOKEN`

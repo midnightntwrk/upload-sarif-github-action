@@ -7,10 +7,30 @@ user-source:
 scan:
     LOCALLY
     ARG SCORECARD_CHECKS
-    BUILD +opengrep
-    BUILD +scorecard --SCORECARD_CHECKS="$SCORECARD_CHECKS"
-    BUILD +checkov
-    BUILD +zizmor
+    ARG SKIP_OPENGREP_SCAN=false
+    ARG SKIP_SCORECARD_SCAN=false
+    ARG SKIP_CHECKOV_SCAN=false
+    ARG SKIP_ZIZMOR_SCAN=false
+    ARG SKIP_TRIVY_SCAN=false
+    ARG SKIP_GITLEAKS_SCAN=false
+    IF [ "$SKIP_OPENGREP_SCAN" != "true" ]
+        BUILD +opengrep
+    END
+    IF [ "$SKIP_SCORECARD_SCAN" != "true" ]
+        BUILD +scorecard --SCORECARD_CHECKS="$SCORECARD_CHECKS"
+    END
+    IF [ "$SKIP_CHECKOV_SCAN" != "true" ]
+        BUILD +checkov
+    END
+    IF [ "$SKIP_ZIZMOR_SCAN" != "true" ]
+        BUILD +zizmor
+    END
+    IF [ "$SKIP_TRIVY_SCAN" != "true" ]
+        BUILD +trivy
+    END
+    IF [ "$SKIP_GITLEAKS_SCAN" != "true" ]
+        BUILD +gitleaks
+    END
 
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.
@@ -130,6 +150,97 @@ checkov:
             --skip-download
 
     SAVE ARTIFACT /output/results_sarif.sarif AS LOCAL scan_reports/checkov.sarif
+
+trivy-bin:
+    # Tiny downloader stage; hash check is the trust anchor.
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+
+    # renovate: datasource=github-releases packageName=aquasecurity/trivy
+    ARG TRIVY_VERSION=0.72.0
+    ARG TARGETARCH
+    WORKDIR /tmp
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            DIST="trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz"; \
+            HASH="2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467"; \
+        else \
+            DIST="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"; \
+            HASH="bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"; \
+        fi && \
+        curl -kfsSL --retry 3 --retry-delay 5 -o trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${DIST}" && \
+        echo "${HASH}  trivy.tar.gz" | sha256sum -c && \
+        tar -xf trivy.tar.gz trivy && \
+        rm trivy.tar.gz
+    SAVE ARTIFACT /tmp/trivy /trivy
+
+trivy:
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    # ca-certificates: trivy (Go) uses the system cert pool for TLS to
+    # ghcr.io when fetching the vulnerability DB at scan time.
+    RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    WORKDIR /src
+
+    COPY +trivy-bin/trivy /usr/local/bin/trivy
+    RUN chmod 0755 /usr/local/bin/trivy
+
+    RUN useradd -m -r -s /usr/sbin/nologin scanner
+    COPY +user-source/src /src
+    RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
+    USER scanner
+
+    # vuln only: secrets are gitleaks' job, IaC misconfig is checkov's.
+    # Without --exit-code trivy exits 0 on findings; non-zero is a real
+    # error (e.g. DB fetch failure) and should fail the target.
+    RUN trivy fs --scanners vuln --format sarif --output /output/trivy.sarif /src
+
+    SAVE ARTIFACT /output/trivy.sarif AS LOCAL scan_reports/trivy.sarif
+
+gitleaks-bin:
+    # Tiny downloader stage; hash check is the trust anchor.
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+
+    # renovate: datasource=github-releases packageName=gitleaks/gitleaks
+    ARG GITLEAKS_VERSION=8.30.1
+    ARG TARGETARCH
+    WORKDIR /tmp
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            DIST="gitleaks_${GITLEAKS_VERSION}_linux_arm64.tar.gz"; \
+            HASH="e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"; \
+        else \
+            DIST="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"; \
+            HASH="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"; \
+        fi && \
+        curl -kfsSL --retry 3 --retry-delay 5 -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${DIST}" && \
+        echo "${HASH}  gitleaks.tar.gz" | sha256sum -c && \
+        tar -xf gitleaks.tar.gz gitleaks && \
+        rm gitleaks.tar.gz
+    SAVE ARTIFACT /tmp/gitleaks /gitleaks
+
+gitleaks:
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    WORKDIR /src
+
+    COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
+    RUN chmod 0755 /usr/local/bin/gitleaks
+
+    RUN useradd -m -r -s /usr/sbin/nologin scanner
+    COPY +user-source/src /src
+    RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
+    USER scanner
+
+    # `dir` mode scans the working tree — .earthlyignore strips .git so
+    # history isn't available in-container (and CI checkouts are shallow
+    # anyway). Exit 1 = leaks found (report, gate downstream via
+    # fail-on-severity); >1 = real error.
+    RUN gitleaks dir /src --report-format sarif --report-path /output/gitleaks.sarif --no-banner; \
+        rc=$?; [ $rc -le 1 ] || exit $rc
+
+    SAVE ARTIFACT /output/gitleaks.sarif AS LOCAL scan_reports/gitleaks.sarif
 
 zizmor-bin:
     # Tiny downloader stage so the runtime image stays apt-free.

@@ -9,11 +9,16 @@ repos).
 - **OpenGrep** - SAST (taint analysis, dataflow tracing)
 - **Checkov** - Infrastructure-as-Code misconfiguration (via EarthBuild)
 - ~~**KICS**~~ - Disabled: [supply chain compromise](https://www.wiz.io/blog/teampcp-attack-kics-github-action) of checkmarx/kics-github-action (2026-03-23)
-- ~~**Trivy**~~ - Disabled: potential further compromise risk
+- **Trivy** - Vulnerability scan (hash-pinned binary, not the GitHub action)
+- **[gitleaks]** - Secret scanning (working tree)
 - **Scorecard** - Supply chain security
 - **[zizmor]** - GitHub Actions static analysis (run offline)
 
+Each scanner can be skipped individually via a
+`skip_<scanner>_scan` input.
+
 [zizmor]: https://github.com/zizmorcore/zizmor
+[gitleaks]: https://github.com/gitleaks/gitleaks
 
 ## Usage
 
@@ -46,12 +51,24 @@ jobs:
 
 ## Inputs
 
-| Input           | Description             | Required | Default    |
-| --------------- | ----------------------- | -------- | ---------- |
-| `fail_severity` | Min severity to fail CI | No       | `critical` |
+All inputs are optional.
+
+| Input                 | Description                     | Default    |
+| --------------------- | ------------------------------- | ---------- |
+| `fail_severity`       | Min severity to fail CI         | `critical` |
+| `scorecard_checks`    | Scorecard checks to run (CSV)   | all checks |
+| `skip_opengrep_scan`  | `true` skips OpenGrep (SAST)    | `false`    |
+| `skip_scorecard_scan` | `true` skips Scorecard          | `false`    |
+| `skip_checkov_scan`   | `true` skips Checkov (IaC)      | `false`    |
+| `skip_zizmor_scan`    | `true` skips zizmor (Actions)   | `false`    |
+| `skip_trivy_scan`     | `true` skips Trivy (vulns)      | `false`    |
+| `skip_gitleaks_scan`  | `true` skips gitleaks (secrets) | `false`    |
 
 `fail_severity` accepts: critical, high, medium.
 Must be set on private repos.
+
+Skipping every scanner makes the action fail — the
+"Verify scan output" step requires at least one SARIF file.
 
 ## How it works
 
