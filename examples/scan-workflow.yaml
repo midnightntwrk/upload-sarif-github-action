@@ -1,5 +1,6 @@
 # Security scan workflow using open source scanners
-# Runs OpenGrep, Checkov, and Scorecard with results uploaded to GitHub Security
+# Runs OpenGrep, Checkov, Scorecard, zizmor, Trivy and gitleaks with results
+# uploaded to GitHub Security
 
 name: Security Scan
 
@@ -25,3 +26,5 @@ jobs:
         uses: midnightntwrk/upload-sarif-github-action@main
         with:
           fail_severity: 'high'
+          # Any scanner can be skipped individually:
+          # skip_trivy_scan: 'true'

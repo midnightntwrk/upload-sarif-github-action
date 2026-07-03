@@ -18,6 +18,30 @@ inputs:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
     default: "critical"
+  skip_opengrep_scan:
+    description: "Set to 'true' to skip the OpenGrep SAST scan"
+    required: false
+    default: "false"
+  skip_scorecard_scan:
+    description: "Set to 'true' to skip the Scorecard supply-chain scan"
+    required: false
+    default: "false"
+  skip_checkov_scan:
+    description: "Set to 'true' to skip the Checkov IaC misconfiguration scan"
+    required: false
+    default: "false"
+  skip_zizmor_scan:
+    description: "Set to 'true' to skip the zizmor GitHub Actions scan"
+    required: false
+    default: "false"
+  skip_trivy_scan:
+    description: "Set to 'true' to skip the Trivy vulnerability scan"
+    required: false
+    default: "false"
+  skip_gitleaks_scan:
+    description: "Set to 'true' to skip the gitleaks secret scan"
+    required: false
+    default: "false"
 
 runs:
   using: 'composite'
@@ -43,7 +67,21 @@ runs:
       shell: bash
       env:
         SCORECARD_CHECKS: ${{ inputs.scorecard_checks }}
-      run: /tmp/earth "${{ github.action_path }}+scan" --SCORECARD_CHECKS="$SCORECARD_CHECKS"
+        SKIP_OPENGREP_SCAN: ${{ inputs.skip_opengrep_scan }}
+        SKIP_SCORECARD_SCAN: ${{ inputs.skip_scorecard_scan }}
+        SKIP_CHECKOV_SCAN: ${{ inputs.skip_checkov_scan }}
+        SKIP_ZIZMOR_SCAN: ${{ inputs.skip_zizmor_scan }}
+        SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
+        SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
+      run: |
+        /tmp/earth "${{ github.action_path }}+scan" \
+          --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
+          --SKIP_OPENGREP_SCAN="$SKIP_OPENGREP_SCAN" \
+          --SKIP_SCORECARD_SCAN="$SKIP_SCORECARD_SCAN" \
+          --SKIP_CHECKOV_SCAN="$SKIP_CHECKOV_SCAN" \
+          --SKIP_ZIZMOR_SCAN="$SKIP_ZIZMOR_SCAN" \
+          --SKIP_TRIVY_SCAN="$SKIP_TRIVY_SCAN" \
+          --SKIP_GITLEAKS_SCAN="$SKIP_GITLEAKS_SCAN"
       working-directory: ${{ github.workspace }}
 
     - name: Collect SARIF files
