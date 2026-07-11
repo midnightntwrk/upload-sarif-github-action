@@ -75,6 +75,7 @@ runs:
         SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
       run: |
         /tmp/earth "${{ github.action_path }}+scan" \
+          --USER_SOURCE_DIR="$GITHUB_WORKSPACE" \
           --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
           --SKIP_OPENGREP_SCAN="$SKIP_OPENGREP_SCAN" \
           --SKIP_SCORECARD_SCAN="$SKIP_SCORECARD_SCAN" \

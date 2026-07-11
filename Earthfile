@@ -1,8 +1,23 @@
 VERSION 0.8
 
+# Directory whose contents get scanned. LOCALLY runs in the Earthfile's own
+# directory (this action's checkout), NOT the caller's cwd — so when consumers
+# invoke us via "$GITHUB_ACTION_PATH+scan" this must be set to the caller's
+# workspace or the scanners see this action's source instead of the consumer
+# repo. Defaults to "." (this directory) for self-scans and local dev.
+ARG --global USER_SOURCE_DIR=.
+
 user-source:
     LOCALLY
-    SAVE ARTIFACT . /src
+    # Stage via tar so we can exclude scan noise (mirrors .earthlyignore) and
+    # avoid recursive self-copy when USER_SOURCE_DIR is this directory.
+    RUN rm -rf .user-src && mkdir .user-src && \
+        tar -C "$USER_SOURCE_DIR" -cf - \
+            --exclude='.user-src' --exclude='.git' --exclude='node_modules' \
+            --exclude='dist' --exclude='build' --exclude='scan_reports' \
+            --exclude='.env' --exclude='.env.*' . \
+        | tar -C .user-src -xf -
+    SAVE ARTIFACT .user-src /src
 
 scan:
     LOCALLY
