@@ -92,7 +92,13 @@ opengrep:
 scorecard:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
-    RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
+    # Retry apt-get update: the Ubuntu mirrors intermittently serve a
+    # mid-sync package index ("File has unexpected size ... Mirror sync in
+    # progress?"), which fails the whole build (exit 100). Acquire::Retries
+    # re-fetches individual files within an attempt; the loop rides out a
+    # mirror-sync window across attempts.
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
@@ -194,7 +200,9 @@ trivy:
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
-    RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    # Retry apt-get update (see the scorecard target) — rides out a mirror sync.
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
