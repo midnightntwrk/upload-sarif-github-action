@@ -216,9 +216,14 @@ trivy:
     USER scanner
 
     # vuln only: secrets are gitleaks' job, IaC misconfig is checkov's.
+    # --offline-scan: match against the local vuln DB only; do NOT make
+    # per-dependency network calls during analysis. On large lockfiles those
+    # lookups can stall for tens of minutes (observed ~29 min on a JS monorepo).
+    # --timeout: hard bound so a stall fails fast and visibly instead of running
+    # to the job/6h cap. Should not fire in normal operation.
     # Without --exit-code trivy exits 0 on findings; non-zero is a real
     # error (e.g. DB fetch failure) and should fail the target.
-    RUN trivy fs --scanners vuln --format sarif --output /output/trivy.sarif /src
+    RUN trivy fs --scanners vuln --offline-scan --timeout 10m --format sarif --output /output/trivy.sarif /src
 
     SAVE ARTIFACT /output/trivy.sarif AS LOCAL scan_reports/trivy.sarif
 
