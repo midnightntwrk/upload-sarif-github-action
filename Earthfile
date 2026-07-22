@@ -146,7 +146,9 @@ checkov-requirements:
         --hash=sha256:4c690e5fbae2f21e87843e89c26191f0d9454f362d8acdbd695716493ec8b3a9
     # renovate: datasource=pypi packageName=checkov
     ARG CHECKOV_VERSION=3.2.510
-    RUN echo "checkov==${CHECKOV_VERSION}" > /tmp/requirements.in && \
+    # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
+    # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
+    RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
         pip-compile --generate-hashes --strip-extras --output-file=/tmp/requirements.txt /tmp/requirements.in
     SAVE ARTIFACT /tmp/requirements.txt AS LOCAL requirements.txt
 
