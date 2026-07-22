@@ -19,6 +19,11 @@ and this project adheres to
 
 ### Fixed
 
+- Scan the caller's workspace instead of the action's own
+  checkout: `user-source` now stages `USER_SOURCE_DIR`
+  (passed as `$GITHUB_WORKSPACE` by `action.yml`), since
+  `LOCALLY` executes in the Earthfile's directory rather
+  than the invoker's cwd
 - Update OpenGrep to v1.14.1 to fix Clojure rule parse
   error ([#46][i46])
 - Fix fail-on-severity script path to use

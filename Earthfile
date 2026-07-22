@@ -1,8 +1,23 @@
 VERSION 0.8
 
+# Directory whose contents get scanned. LOCALLY runs in the Earthfile's own
+# directory (this action's checkout), NOT the caller's cwd — so when consumers
+# invoke us via "$GITHUB_ACTION_PATH+scan" this must be set to the caller's
+# workspace or the scanners see this action's source instead of the consumer
+# repo. Defaults to "." (this directory) for self-scans and local dev.
+ARG --global USER_SOURCE_DIR=.
+
 user-source:
     LOCALLY
-    SAVE ARTIFACT . /src
+    # Stage via tar so we can exclude scan noise (mirrors .earthlyignore) and
+    # avoid recursive self-copy when USER_SOURCE_DIR is this directory.
+    RUN rm -rf .user-src && mkdir .user-src && \
+        tar -C "$USER_SOURCE_DIR" -cf - \
+            --exclude='.user-src' --exclude='.git' --exclude='node_modules' \
+            --exclude='dist' --exclude='build' --exclude='scan_reports' \
+            --exclude='.env' --exclude='.env.*' . \
+        | tar -C .user-src -xf -
+    SAVE ARTIFACT .user-src /src
 
 scan:
     LOCALLY
@@ -77,7 +92,13 @@ opengrep:
 scorecard:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
-    RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
+    # Retry apt-get update: the Ubuntu mirrors intermittently serve a
+    # mid-sync package index ("File has unexpected size ... Mirror sync in
+    # progress?"), which fails the whole build (exit 100). Acquire::Retries
+    # re-fetches individual files within an attempt; the loop rides out a
+    # mirror-sync window across attempts.
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
@@ -125,7 +146,9 @@ checkov-requirements:
         --hash=sha256:4c690e5fbae2f21e87843e89c26191f0d9454f362d8acdbd695716493ec8b3a9
     # renovate: datasource=pypi packageName=checkov
     ARG CHECKOV_VERSION=3.2.510
-    RUN echo "checkov==${CHECKOV_VERSION}" > /tmp/requirements.in && \
+    # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
+    # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
+    RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
         pip-compile --generate-hashes --strip-extras --output-file=/tmp/requirements.txt /tmp/requirements.in
     SAVE ARTIFACT /tmp/requirements.txt AS LOCAL requirements.txt
 
@@ -179,7 +202,9 @@ trivy:
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
-    RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    # Retry apt-get update (see the scorecard target) — rides out a mirror sync.
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
