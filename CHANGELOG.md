@@ -11,6 +11,14 @@ and this project adheres to
 
 ### Changed
 
+- **A committed secret now fails the build at every
+  `fail_severity`, including the `critical` default.** gitleaks
+  assigns no severity, so its findings are stamped `CRITICAL`
+  before the gate sees them - a leaked credential is not a
+  point on a severity scale. Potentially breaking for repos
+  containing flagged fixtures: the failure prints both
+  exclusion mechanisms and the exact `.gitleaksignore`
+  fingerprint to paste
 - Removed Checkmarx integration
   (BYOR upload, checkmarx-scan, checkmarx-scan-public)
 - Made scan action (OpenGrep, KICS, Trivy, Scorecard)
@@ -19,6 +27,19 @@ and this project adheres to
 
 ### Fixed
 
+- gitleaks scanned `/src` rather than `.`, which broke three
+  things at once: the repository's own `.gitleaks.toml` was
+  never loaded, so path allowlists were silently ignored;
+  reported paths and `.gitleaksignore` fingerprints came out
+  as `/src/...`, which no contributor could guess; and the
+  SARIF `uri` was an absolute container path that GitHub's
+  Security tab cannot map to a file in the repo
+- The differential gate's base scan needed `--no-cache`.
+  `+user-source` stages the tree with `LOCALLY`, so its
+  contents are not part of the scanner targets' cache key -
+  the second scan in a job was served the first one's SARIF,
+  making the counts always equal, blocking every PR, and
+  looking exactly like correct policy
 - Severity-less results were ignored by the gate, so **no
   gitleaks finding could fail a build at any threshold** - a
   committed private key scanned clean. Severity now resolves

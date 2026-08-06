@@ -43,7 +43,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 
   ```console
   earth ./+test                        # unit tests (bats), hermetic
-  ./tests/integration-differential.sh  # end to end, needs docker
+  ./tests/integration.sh               # end to end, needs docker
   shellcheck scripts/*.sh tests/*.sh tests/helper.bash
   ```
 

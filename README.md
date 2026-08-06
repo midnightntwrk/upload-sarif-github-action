@@ -76,11 +76,50 @@ SARIF default for a result specifying none
 ([SARIF 3.27.10][sarif]). A severity outside the known set
 (Trivy `UNKNOWN`, SARIF `none`) is annotated and not gated.
 
-gitleaks emits no severity, so secret findings resolve to
-`warning`. **To fail the build on secrets, set
-`fail_severity: warning`.** At `critical` (the default),
-`high` or `medium`, a committed private key is reported to
-the Security tab but does not fail the build.
+### Secrets always fail the build
+
+A committed secret fails the build at **every** `fail_severity`,
+including the `critical` default. gitleaks assigns no severity
+of its own, so the action stamps its findings `CRITICAL`
+before they reach the gate — a leaked credential is not a
+point on a severity scale.
+
+Rotate the credential first; it is in the repository, so
+treat it as compromised. To exclude a false positive or a
+deliberate fixture, gitleaks has two mechanisms and only one
+of them takes a path:
+
+**A path or a whole directory** — `.gitleaks.toml` in the
+repository root:
+
+```toml
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "test fixtures"
+paths = ['''^tests/fixtures/''']
+```
+
+**One specific finding** — `.gitleaksignore` in the
+repository root, one fingerprint per line:
+
+```text
+vendor/id_rsa:private-key:1
+```
+
+The build failure prints the exact fingerprint lines for the
+findings it saw, so they can be pasted straight in, and links
+back to this section plus the gitleaks reference for
+[path allowlists][gl-config] and [`.gitleaksignore`][gl-ignore].
+
+Both mechanisms are exercised end to end in
+`tests/integration.sh`, the `.gitleaksignore` one using the
+same line the failure message offers — so the advice cannot
+rot while the tests stay green.
+
+[gl-config]: https://github.com/gitleaks/gitleaks#configuration
+[gl-ignore]: https://github.com/gitleaks/gitleaks#gitleaksignore
 
 [sarif]: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html#_Toc34317648
 

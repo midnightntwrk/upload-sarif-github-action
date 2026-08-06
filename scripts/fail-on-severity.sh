@@ -57,6 +57,8 @@ fi
 
 count=0
 unknown=0
+secrets=0
+secret_ignores=""
 
 for f in "${sarifs[@]}"; do
     # Severity resolution and line formatting live in severity.jq, so this loop
@@ -68,25 +70,74 @@ for f in "${sarifs[@]}"; do
         --argjson map "$SEVERITIES" --argjson threshold "$THRESHOLD_N" "$f")"; then
         # No count written: a caller reading 0 from a failed parse would pass the
         # build, which is what rc 2 exists to prevent.
-        echo "::error::could not parse SARIF in '''$f'''" >&2
+        echo "::error::could not parse SARIF in '$f'" >&2
         exit 2
     fi
 
-    count=$((count + $(jq -r '''.count''' <<< "$report")))
-    unknown=$((unknown + $(jq -r '''.unknown''' <<< "$report")))
+    count=$((count + $(jq -r '.count' <<< "$report")))
+    unknown=$((unknown + $(jq -r '.unknown' <<< "$report")))
 
-    jq -r '''.findings[]?''' <<< "$report" | while IFS= read -r line; do
+    # Collected so a failure can hand the contributor the exact exclusion line,
+    # rather than leaving them to discover that gitleaks has two mechanisms and
+    # that only one of them takes a path.
+    if [ "$(jq -r '.tool' <<< "$report")" = gitleaks ]; then
+        secrets=$((secrets + $(jq -r '.count' <<< "$report")))
+        while IFS= read -r ig; do
+            [ -n "$ig" ] && secret_ignores="${secret_ignores}${ig}"$'\n'
+        done <<< "$(jq -r '.ignores[]?' <<< "$report")"
+    fi
+
+    jq -r '.findings[]?' <<< "$report" | while IFS= read -r line; do
         [ -n "$line" ] && echo "  $line  [$f]"
     done
 
     # Unmapped severities (Trivy UNKNOWN, SARIF "none") are reported and skipped
     # rather than aborting mid-count: a partial count is a wrong verdict.
-    jq -r '''.unmapped[]?''' <<< "$report" | while IFS= read -r line; do
+    jq -r '.unmapped[]?' <<< "$report" | while IFS= read -r line; do
         [ -n "$line" ] && echo "::warning::unmapped severity $line in $f - not gated"
     done
 done
 
 [ "$unknown" -gt 0 ] && echo "$unknown finding(s) had a severity outside the known set and were not gated"
+
+# Secrets are stamped CRITICAL by scripts/secrets-severity.jq, so they fail at
+# every threshold. That is deliberate, which makes the escape hatch worth
+# spelling out at the point of failure rather than in a wiki nobody reads.
+if [ "$secrets" -gt 0 ]; then
+    cat >&2 <<'GUIDANCE'
+
+::error::a committed secret fails the build regardless of fail_severity
+  Rotate the credential first. It is in the repository, so treat it as
+  compromised whatever happens to this build.
+
+  If it is a false positive or a deliberate test fixture, exclude it. gitleaks
+  has two mechanisms and they are not interchangeable:
+
+  1. A path or a whole directory - .gitleaks.toml in the repository root:
+
+       [extend]
+       useDefault = true
+
+       [[allowlists]]
+       description = "test fixtures"
+       paths = ['''^tests/fixtures/''']
+
+  2. One specific finding - .gitleaksignore in the repository root, one
+     fingerprint per line. The lines for this build are:
+GUIDANCE
+    printf '%s' "$secret_ignores" | sed 's/^/       /' >&2
+    # Derived from the environment so the link stays correct on a fork or on
+    # GitHub Enterprise; the literal is only the fallback for a local run.
+    action_repo="${GITHUB_ACTION_REPOSITORY:-midnightntwrk/upload-sarif-github-action}"
+    server="${GITHUB_SERVER_URL:-https://github.com}"
+    cat >&2 <<GUIDANCE_LINKS
+
+  Full reference:
+    this action's policy .. $server/$action_repo#secrets-always-fail-the-build
+    path allowlists ....... https://github.com/gitleaks/gitleaks#configuration
+    .gitleaksignore ....... https://github.com/gitleaks/gitleaks#gitleaksignore
+GUIDANCE_LINKS
+fi
 
 write_count "$count"
 

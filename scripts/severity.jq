@@ -6,12 +6,18 @@
 #
 #   { "count":   <findings at or above the threshold>,
 #     "unknown": <results whose severity is not in $map>,
+#     "tool":    "<the producing tool, or "">",
 #     "findings": [ "HIGH  rule-id  path: message", ... ],
-#     "unmapped": [ "UNKNOWN (rule-id)", ... ] }
+#     "unmapped": [ "UNKNOWN (rule-id)", ... ],
+#     "ignores":  [ "path:rule-id:line", ... ] }
 #
 # Formatting the lines here rather than in the caller is deliberate: the shell
 # then needs a count and some strings, never individual fields, so there is no
 # delimiter to choose and no `read` splitting to get wrong.
+#
+# `ignores` is the gitleaks fingerprint format, so a build failure can hand the
+# contributor the exact line to paste into `.gitleaksignore`. It is only
+# populated for gitleaks output, since the format is that tool's.
 
 # Rule-level default levels, keyed by rule id, for results carrying no level.
 def rule_levels:
@@ -35,20 +41,29 @@ def severity($rule_levels):
     end;
 
 [ .runs[]?
+  | (.tool.driver.name // "") as $tool
   | rule_levels as $rule_levels
   | .results[]?
   | severity($rule_levels) as $severity
-  | { severity: $severity,
+  | { tool:     $tool,
+      severity: $severity,
       # null for a severity outside $map: reported, but never gated on.
       rank:     $map[$severity],
       rule:     (.ruleId // ""),
       file:     (.locations[0].physicalLocation.artifactLocation.uri // ""),
+      line:     (.locations[0].physicalLocation.region.startLine // 0),
       message:  ((.message.text // "") | gsub("\\s+"; " ")) } ]
-| { count:    [ .[] | select(.rank != null and .rank >= $threshold) ] | length,
-    unknown:  [ .[] | select(.rank == null) ] | length,
-    findings: [ .[] | select(.rank != null and .rank >= $threshold)
+| ( [ .[] | select(.rank != null and .rank >= $threshold) ] ) as $hits
+| ( [ .[] | select(.rank == null) ] ) as $unmapped
+| { count:    ($hits | length),
+    unknown:  ($unmapped | length),
+    tool:     ( [ .[].tool | select(. != "") ] | first // "" ),
+    findings: [ $hits[]
                 | "\(.severity)  \(if .rule == "" then "-" else .rule end)"
                   + "  \(if .file == "" then "-" else .file end)"
                   + "\(if .message == "" then "" else ": " + .message end)" ],
-    unmapped: [ .[] | select(.rank == null)
-                | "\(.severity) (rule \(if .rule == "" then "?" else .rule end))" ] }
+    unmapped: [ $unmapped[]
+                | "\(.severity) (rule \(if .rule == "" then "?" else .rule end))" ],
+    ignores:  [ $hits[]
+                | select(.tool == "gitleaks" and .file != "")
+                | "\(.file):\(.rule):\(.line)" ] }

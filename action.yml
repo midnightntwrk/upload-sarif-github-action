@@ -193,7 +193,15 @@ runs:
           exit 1
         fi
         mapfile -t flags < "$flags_file"
-        /tmp/earth "${ACTION_PATH}+scan" \
+
+        # --no-cache is required, not a precaution. +user-source stages the tree
+        # with LOCALLY, so its contents do not enter the cache key of the
+        # scanner targets that COPY from it. Without this, the base scan in the
+        # same job is served the head scan's SARIF: the counts come out equal,
+        # the gate blocks every PR, and it looks exactly like correct policy.
+        # Verified by scanning two different trees in sequence - the second
+        # returned the first's findings, including its file paths.
+        /tmp/earth --no-cache "${ACTION_PATH}+scan" \
           --USER_SOURCE_DIR="$base_dir" "${flags[@]}" || true
 
         # Own directory: head SARIFs are already uploaded by now, and mixing the

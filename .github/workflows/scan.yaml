@@ -48,10 +48,11 @@ jobs:
         run: earth ./+test
 
       # Cannot run inside +test: it drives earth itself, so it needs docker on
-      # the host. Proves the gate gates something - a real scanner's real SARIF
-      # through the counter through the gate, which hand-written SARIF cannot.
-      - name: Differential gate integration test
-        run: ./tests/integration-differential.sh
+      # the host. Proves the gate gates something, and that both gitleaks
+      # exclusion mechanisms really suppress a finding - including the exact
+      # fingerprint line the build failure tells contributors to paste.
+      - name: Integration tests (real scanner)
+        run: ./tests/integration.sh
 
   scan:
     runs-on: ubuntu-latest

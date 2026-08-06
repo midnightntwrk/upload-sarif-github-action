@@ -73,6 +73,9 @@ test:
     WORKDIR /work
     COPY scripts /work/scripts
     COPY tests /work/tests
+    # A test input, not documentation: the suite asserts that the anchor printed
+    # in a build failure resolves to a heading that actually exists.
+    COPY README.md /work/README.md
     RUN /opt/bats/bin/bats --print-output-on-failure tests/
 
 opengrep-bin:
@@ -278,11 +281,15 @@ gitleaks:
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
     WORKDIR /src
 
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+
     COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
     RUN chmod 0755 /usr/local/bin/gitleaks
 
     RUN useradd -m -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
+    COPY scripts/secrets-severity.jq /scripts/secrets-severity.jq
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
 
@@ -290,8 +297,19 @@ gitleaks:
     # history isn't available in-container (and CI checkouts are shallow
     # anyway). Exit 1 = leaks found (report, gate downstream via
     # fail-on-severity); >1 = real error.
-    RUN gitleaks dir /src --report-format sarif --report-path /output/gitleaks.sarif --no-banner; \
+    #
+    # The target is `.`, not `/src`, and that is load-bearing three times over.
+    # With an absolute target gitleaks does not pick up the repo's own
+    # `.gitleaks.toml`, so path allowlists are silently ignored; reported paths
+    # and `.gitleaksignore` fingerprints come out as `/src/...`, which no
+    # contributor could guess; and the SARIF `uri` is an absolute container path,
+    # which GitHub's Security tab cannot map back to a file in the repo.
+    RUN gitleaks dir . --report-format sarif --report-path /output/gitleaks.sarif --no-banner; \
         rc=$?; [ $rc -le 1 ] || exit $rc
+
+    # Secrets are critical by policy - see scripts/secrets-severity.jq.
+    RUN jq -f /scripts/secrets-severity.jq /output/gitleaks.sarif > /output/stamped.sarif \
+        && mv /output/stamped.sarif /output/gitleaks.sarif
 
     SAVE ARTIFACT /output/gitleaks.sarif AS LOCAL scan_reports/gitleaks.sarif
 
