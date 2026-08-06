@@ -46,6 +46,20 @@ fi
 # actions/checkout is shallow by default, so the target-branch commit is
 # usually absent even though the ref exists upstream.
 if ! git -C "$REPO" cat-file -e "${REV}^{commit}" 2>/dev/null; then
+    # A remote can be asked for an object name or a ref, and nothing else. Sent
+    # a rev expression, git says `fatal: invalid refspec 'HEAD~1'`, which does
+    # not hint at the cause - and it only shows up on a shallow clone, where
+    # the expression could not be resolved locally first.
+    case "$REV" in
+        *'~'* | *'^'* | *'@{'* | *:*)
+            echo "::error::'$REV' is not present locally and is not a fetchable object name" >&2
+            echo "  Rev expressions (~ ^ @{} :) cannot be fetched from a remote; only a full" >&2
+            echo "  commit SHA or a ref name can. This usually means a shallow clone, where" >&2
+            echo "  the expression could not be resolved locally either." >&2
+            echo "  Resolve it first:  git rev-parse '$REV'" >&2
+            exit 1
+            ;;
+    esac
     echo "Commit $REV not present locally; fetching."
     if ! git -C "$REPO" fetch --no-tags --depth=1 origin "$REV" 2>&1; then
         echo "::error::cannot obtain commit '$REV' from origin" >&2
