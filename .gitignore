@@ -1,1 +1,6 @@
 scan_reports/
+# +user-source stages the scanned tree here (LOCALLY, so in the Earthfile's
+# own directory). Untracked and unignored, a `git add -A` after any local
+# run commits whatever was scanned - another repo's source, if that is what
+# USER_SOURCE_DIR pointed at.
+.user-src/

@@ -56,6 +56,7 @@ All inputs are optional.
 | Input                 | Description                     | Default    |
 | --------------------- | ------------------------------- | ---------- |
 | `fail_severity`       | Min severity to fail CI         | `critical` |
+| `differential_gate`   | `true` compares against target  | `false`    |
 | `scorecard_checks`    | Scorecard checks to run (CSV)   | all checks |
 | `skip_opengrep_scan`  | `true` skips OpenGrep (SAST)    | `false`    |
 | `skip_scorecard_scan` | `true` skips Scorecard          | `false`    |
@@ -64,8 +65,73 @@ All inputs are optional.
 | `skip_trivy_scan`     | `true` skips Trivy (vulns)      | `false`    |
 | `skip_gitleaks_scan`  | `true` skips gitleaks (secrets) | `false`    |
 
-`fail_severity` accepts: critical, high, medium.
-Must be set on private repos.
+`fail_severity` accepts: critical, high, medium, low,
+warning, note. Must be set on private repos.
+
+### Severity resolution
+
+A SARIF result's severity is read in this order:
+`result.level`, then `properties.severity`, then the rule's
+`defaultConfiguration.level`, then `warning` — the SARIF
+default for a result that specifies none
+([SARIF 3.27.10][sarif]). A severity outside the known set
+(Trivy's `UNKNOWN`, SARIF's `none`) is reported as a warning
+annotation and not gated.
+
+> **gitleaks needs a policy decision.** gitleaks emits no
+> severity, so its findings resolve to `warning` and are
+> invisible at `medium` and above — including the default
+> `critical`. A committed private key will appear in the
+> Security tab and **will not fail the build**. Treating a
+> leaked credential as a severity at all is arguably the
+> wrong model: it is binary. Until that is settled, gate
+> gitleaks separately or run with a `warning` threshold.
+
+[sarif]: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html#_Toc34317648
+
+## Differential gate
+
+By default the gate is absolute: any finding at or above
+`fail_severity` fails the build. That makes two PRs which
+each fix one of two outstanding vulnerabilities individually
+unmergeable — neither is sufficient on its own, so the only
+way through is a combined PR.
+
+Set `differential_gate: true` and, **when the absolute gate
+fails**, the action re-scans the PR's target branch in the
+same job and passes if the PR strictly reduces the finding
+count:
+
+```text
+pass iff count(PR merged into target) < count(target)
+```
+
+- Two PRs each fixing one of two findings: both pass (2 → 1).
+- A PR that introduces a finding: blocked.
+- A PR that swaps one finding for another: blocked — the
+  count is unchanged.
+- An unrelated PR, while findings are outstanding: blocked.
+  This is deliberate. While something major is outstanding,
+  the only changes that land are ones that reduce the count.
+- A PR that removes two findings and introduces one: passes
+  (2 → 1). The count is the whole contract.
+
+Notes:
+
+- Costs nothing on a green PR — the second scan only runs
+  when the first gate fails.
+- Both scans run in the same job, so they use identical
+  scanner binaries and the same Trivy database fetch. A
+  cached scan from an earlier run would drift as the vuln
+  database updates and report phantom new findings.
+- `pull_request` events only. Pushes and scheduled runs
+  always use the absolute gate, so `main` still reports the
+  true total.
+- Needs the target commit fetchable. Pass `github_token` if
+  the repo is private or the caller used
+  `persist-credentials: false`.
+- Base-branch results are **not** uploaded to the Security
+  tab; only the PR's own findings are.
 
 Skipping every scanner makes the action fail — the
 "Verify scan output" step requires at least one SARIF file.

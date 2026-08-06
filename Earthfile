@@ -47,6 +47,19 @@ scan:
         BUILD +gitleaks
     END
 
+test:
+    # Unit tests for the gate scripts. No network, no scanners: fixtures in
+    # tests/fixtures/ are plain SARIF. Hermetic so the jq version is pinned -
+    # the severity ladder and field splitting both live in jq now.
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+    WORKDIR /work
+    COPY scripts /work/scripts
+    COPY tests /work/tests
+    RUN ./tests/run-tests.sh
+
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl

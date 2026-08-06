@@ -1,0 +1,1 @@
+{"runs":[{"results":[{"ruleId":"R1","properties":{"severity":"HIGH"},"message":{"text":"one"}},{"ruleId":"R2","properties":{"severity":"CRITICAL"},"message":{"text":"two"}}]}]}

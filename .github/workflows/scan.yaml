@@ -20,6 +20,55 @@ jobs:
     steps:
       - run: echo backward compatible job till shielded-iac is updated.
 
+  unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh tests/*.sh
+
+      # Runs the same script as `earth +test`; jq is preinstalled on the
+      # runner, so this skips the container for speed. Use `earth +test`
+      # locally for a pinned-jq, hermetic run.
+      - name: Gate script unit tests
+        run: ./tests/run-tests.sh
+
+      # Not part of `earth +test`: it needs real git objects, and
+      # +user-source strips .git from the staged tree.
+      - name: Base materialisation tests
+        run: ./tests/test-materialise-base.sh
+
+  # Proves the gate gates something: a real scanner's real SARIF through the
+  # counter through the gate. Unit tests use hand-written SARIF and cannot
+  # catch a scanner whose output the counter silently ignores.
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install EarthBuild
+        run: |
+          # renovate: datasource=github-releases packageName=EarthBuild/earthbuild
+          earthbuild_version="v0.8.17"
+          curl -fsSL -o /tmp/earth "https://github.com/EarthBuild/earthbuild/releases/download/${earthbuild_version}/earth-linux-amd64"
+          echo "85b7f31020be220493c1ef89fe4e976985a72e54dd12b7dfcf17544c8d4fd880  /tmp/earth" | sha256sum -c --strict
+          chmod 0755 /tmp/earth
+          sudo mv /tmp/earth /usr/local/bin/earth
+
+      - name: Differential gate integration test
+        run: ./tests/integration-differential.sh
+
   scan:
     runs-on: ubuntu-latest
     permissions:

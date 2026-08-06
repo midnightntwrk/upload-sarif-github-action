@@ -1,0 +1,1 @@
+{"runs":[{"tool":{"driver":{"name":"gitleaks","rules":[{"id":"private-key"}]}},"results":[{"ruleId":"private-key","message":{"text":"private key detected"},"locations":[{"physicalLocation":{"artifactLocation":{"uri":"id_rsa"}}}]}]}]}
