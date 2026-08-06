@@ -14,6 +14,7 @@
 
 set -uo pipefail
 
+JQ="$(cd "$(dirname "$0")" && pwd)/severity.jq"
 SEVERITIES='{"NOTE":0,"WARNING":1,"LOW":1,"MEDIUM":2,"HIGH":3,"ERROR":4,"CRITICAL":5}'
 
 usage() {
@@ -30,6 +31,7 @@ REPORTS_DIR="${2:-scan_reports}"
 COUNT_FILE="${FINDINGS_COUNT_FILE:-}"
 
 [ -n "$THRESHOLD" ] || usage "empty severity threshold"
+[ -f "$JQ" ] || usage "severity.jq not found next to this script (looked in $JQ)"
 
 THRESHOLD_N="$(jq -rn --argjson s "$SEVERITIES" --arg t "$THRESHOLD" '$s[$t] // empty')"
 [ -n "$THRESHOLD_N" ] || usage "unknown severity threshold '${1}' (accepted: $(jq -rn --argjson s "$SEVERITIES" '$s | keys_unsorted | join(", ") | ascii_downcase'))"
@@ -56,68 +58,32 @@ fi
 count=0
 unknown=0
 
-# Unit-separated, not tab: tab is IFS whitespace, so `read` collapses runs of
-# it and drops empty fields, shifting every column after a location-less finding.
-US=$'\x1f'
-
 for f in "${sarifs[@]}"; do
-    # One jq pass per file. Severity resolution lives in jq so an unmapped value
-    # (Trivy UNKNOWN, SARIF "none") is skipped rather than aborting mid-count - a
-    # partial count is a wrong verdict, not a near-miss.
-    #
-    # jq's status is checked on the assignment: after `done < <(jq ...)` it is
-    # the *loop's* status, i.e. whatever the body's last command returned.
-    if ! rows="$(
-        jq -r --argjson map "$SEVERITIES" --argjson threshold "$THRESHOLD_N" --arg us "$US" '
-            .runs[]?
-            # SARIF 3.27.10: result.level, else the rule default, else warning.
-            # A severity-less result is a warning, not something to ignore -
-            # gitleaks emits none, so dropping these meant a committed private
-            # key could not fail the build at any threshold.
-            | ( [ (.tool.driver.rules // [])[]
-                  | select(.id != null and .defaultConfiguration.level != null)
-                  | {key: .id, value: (.defaultConfiguration.level | ascii_upcase)} ]
-                | from_entries ) as $ruleLevels
-            | .results[]?
-            | (.level // "" | tostring | ascii_upcase) as $level
-            | (.properties.severity // "" | tostring | ascii_upcase) as $prop
-            | ($ruleLevels[.ruleId // ""] // "") as $ruleLevel
-            | (if $level != "" then $level
-               elif $prop != "" then $prop
-               elif $ruleLevel != "" then $ruleLevel
-               else "WARNING" end) as $sev
-            | ($map[$sev]) as $n
-            | [ (if $n == null then "UNK" elif $n >= $threshold then "HIT" else "SKIP" end),
-                $sev,
-                (.ruleId // ""),
-                (.locations[0].physicalLocation.artifactLocation.uri // ""),
-                ((.message.text // "") | gsub("[\n\t]"; " "))
-              ]
-            | select(.[0] != "SKIP")
-            | join($us)
-        ' "$f"
-    )"; then
-        # No count written: a caller reading 0 from a failed parse would pass
-        # the build, which is what rc 2 exists to prevent.
-        echo "::error::could not parse SARIF in '$f'" >&2
+    # Severity resolution and line formatting live in severity.jq, so this loop
+    # only handles a count and ready-made strings - no fields to split, hence no
+    # delimiter to get wrong. jq's status is checked on the assignment: after
+    # `done < <(jq ...)` it would be the loop's status, i.e. whatever the body's
+    # last command returned.
+    if ! report="$(jq -f "$JQ" \
+        --argjson map "$SEVERITIES" --argjson threshold "$THRESHOLD_N" "$f")"; then
+        # No count written: a caller reading 0 from a failed parse would pass the
+        # build, which is what rc 2 exists to prevent.
+        echo "::error::could not parse SARIF in '''$f'''" >&2
         exit 2
     fi
 
-    while IFS="$US" read -r tag sev rule file message; do
-        case "$tag" in
-            HIT)
-                count=$((count + 1))
-                echo "$sev finding in $f"
-                [ -n "$rule" ] && echo "  Rule: $rule"
-                [ -n "$file" ] && echo "  File: $file"
-                [ -n "$message" ] && echo "  Message: $message"
-                ;;
-            UNK)
-                unknown=$((unknown + 1))
-                echo "::warning::unmapped severity '$sev' in $f (rule ${rule:-?}) - not gated"
-                ;;
-        esac
-    done <<< "$rows"
+    count=$((count + $(jq -r '''.count''' <<< "$report")))
+    unknown=$((unknown + $(jq -r '''.unknown''' <<< "$report")))
+
+    jq -r '''.findings[]?''' <<< "$report" | while IFS= read -r line; do
+        [ -n "$line" ] && echo "  $line  [$f]"
+    done
+
+    # Unmapped severities (Trivy UNKNOWN, SARIF "none") are reported and skipped
+    # rather than aborting mid-count: a partial count is a wrong verdict.
+    jq -r '''.unmapped[]?''' <<< "$report" | while IFS= read -r line; do
+        [ -n "$line" ] && echo "::warning::unmapped severity $line in $f - not gated"
+    done
 done
 
 [ "$unknown" -gt 0 ] && echo "$unknown finding(s) had a severity outside the known set and were not gated"

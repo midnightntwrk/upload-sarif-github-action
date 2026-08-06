@@ -83,15 +83,22 @@ runs:
         SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
         SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
       run: |
+        # Written once and re-read by the differential gate's base scan, so the
+        # two passes cannot be given different scanners. Adding a scanner means
+        # editing this list only.
+        {
+          printf -- '--SCORECARD_CHECKS=%s\n'    "$SCORECARD_CHECKS"
+          printf -- '--SKIP_OPENGREP_SCAN=%s\n'  "$SKIP_OPENGREP_SCAN"
+          printf -- '--SKIP_SCORECARD_SCAN=%s\n' "$SKIP_SCORECARD_SCAN"
+          printf -- '--SKIP_CHECKOV_SCAN=%s\n'   "$SKIP_CHECKOV_SCAN"
+          printf -- '--SKIP_ZIZMOR_SCAN=%s\n'    "$SKIP_ZIZMOR_SCAN"
+          printf -- '--SKIP_TRIVY_SCAN=%s\n'     "$SKIP_TRIVY_SCAN"
+          printf -- '--SKIP_GITLEAKS_SCAN=%s\n'  "$SKIP_GITLEAKS_SCAN"
+        } > "${RUNNER_TEMP:-/tmp}/scan-flags"
+        mapfile -t flags < "${RUNNER_TEMP:-/tmp}/scan-flags"
+
         /tmp/earth "${{ github.action_path }}+scan" \
-          --USER_SOURCE_DIR="$GITHUB_WORKSPACE" \
-          --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
-          --SKIP_OPENGREP_SCAN="$SKIP_OPENGREP_SCAN" \
-          --SKIP_SCORECARD_SCAN="$SKIP_SCORECARD_SCAN" \
-          --SKIP_CHECKOV_SCAN="$SKIP_CHECKOV_SCAN" \
-          --SKIP_ZIZMOR_SCAN="$SKIP_ZIZMOR_SCAN" \
-          --SKIP_TRIVY_SCAN="$SKIP_TRIVY_SCAN" \
-          --SKIP_GITLEAKS_SCAN="$SKIP_GITLEAKS_SCAN"
+          --USER_SOURCE_DIR="$GITHUB_WORKSPACE" "${flags[@]}"
       working-directory: ${{ github.workspace }}
 
     - name: Collect SARIF files
@@ -172,13 +179,6 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         GH_TOKEN: ${{ inputs.github_token }}
-        SCORECARD_CHECKS: ${{ inputs.scorecard_checks }}
-        SKIP_OPENGREP_SCAN: ${{ inputs.skip_opengrep_scan }}
-        SKIP_SCORECARD_SCAN: ${{ inputs.skip_scorecard_scan }}
-        SKIP_CHECKOV_SCAN: ${{ inputs.skip_checkov_scan }}
-        SKIP_ZIZMOR_SCAN: ${{ inputs.skip_zizmor_scan }}
-        SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
-        SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
       run: |
         base_dir="${RUNNER_TEMP:-/tmp}/base-src"
         "$ACTION_PATH/scripts/materialise-base.sh" \
@@ -187,15 +187,14 @@ runs:
         # Same binaries, same vuln DB fetch, same job: the counts are comparable
         # because they are produced minutes apart. A base scan cached from an
         # earlier day drifts as Trivy's database updates, inventing findings.
+        flags_file="${RUNNER_TEMP:-/tmp}/scan-flags"
+        if [ ! -f "$flags_file" ]; then
+          echo "::error::$flags_file is missing - the head scan step did not run"
+          exit 1
+        fi
+        mapfile -t flags < "$flags_file"
         /tmp/earth "${ACTION_PATH}+scan" \
-          --USER_SOURCE_DIR="$base_dir" \
-          --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
-          --SKIP_OPENGREP_SCAN="$SKIP_OPENGREP_SCAN" \
-          --SKIP_SCORECARD_SCAN="$SKIP_SCORECARD_SCAN" \
-          --SKIP_CHECKOV_SCAN="$SKIP_CHECKOV_SCAN" \
-          --SKIP_ZIZMOR_SCAN="$SKIP_ZIZMOR_SCAN" \
-          --SKIP_TRIVY_SCAN="$SKIP_TRIVY_SCAN" \
-          --SKIP_GITLEAKS_SCAN="$SKIP_GITLEAKS_SCAN" || true
+          --USER_SOURCE_DIR="$base_dir" "${flags[@]}" || true
 
         # Own directory: head SARIFs are already uploaded by now, and mixing the
         # two would misattribute target-branch findings to the PR.

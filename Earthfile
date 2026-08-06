@@ -47,17 +47,33 @@ scan:
         BUILD +gitleaks
     END
 
+bats-bin:
+    # Hash-pinned like every other tool here; the tarball is the trust anchor.
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    # renovate: datasource=github-releases packageName=bats-core/bats-core
+    ARG BATS_VERSION=v1.14.0
+    WORKDIR /tmp
+    RUN curl -fsSL --retry 3 --retry-delay 5 -o bats.tar.gz \
+            "https://github.com/bats-core/bats-core/archive/refs/tags/${BATS_VERSION}.tar.gz" && \
+        echo "bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177  bats.tar.gz" \
+            | sha256sum -c && \
+        mkdir -p /tmp/bats && tar -xf bats.tar.gz -C /tmp/bats --strip-components=1
+    SAVE ARTIFACT /tmp/bats /bats
+
 test:
-    # Unit tests for the gate scripts. No network, no scanners. Hermetic so
-    # the jq version is pinned: the severity ladder lives in jq now.
+    # Unit tests for the gate scripts. No network, no scanners, no docker, so
+    # `earth +test` is the whole suite bar the integration test. Hermetic, so the
+    # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
     RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
         && apt-get install -y --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
+    COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
     COPY tests /work/tests
-    RUN ./tests/run-tests.sh
+    RUN /opt/bats/bin/bats --print-output-on-failure tests/
 
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.

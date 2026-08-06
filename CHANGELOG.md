@@ -56,13 +56,18 @@ and this project adheres to
   Unrelated PRs stay blocked while findings are outstanding —
   the count must go down, not merely stay level. Off by
   default; `pull_request` events only
-- `tests/run-tests.sh` and an `earth +test` target: 40 unit
+- `bats` test suites and an `earth +test` target: 64 unit
   tests over SARIF fixtures and a scratch git repo, no
-  network or scanners needed
+  network or scanners needed. bats is hash-pinned in the
+  Earthfile like every other tool, so `earth +test` needs
+  nothing installed locally
 - `tests/integration-differential.sh`: end-to-end test of the
   gate against a real gitleaks scan of two trees differing by
   one secret, asserting the scanner fires before comparing
   counts
+- `scripts/severity.jq`: severity resolution as a standalone
+  jq program, following the existing `scorecard.jq` pattern,
+  runnable and testable on its own
 - `scripts/materialise-base.sh`: base-tree checkout extracted
   from `action.yml` so it can be tested outside a PR event
 - CI jobs for shellcheck, unit tests and the integration test
