@@ -4,18 +4,17 @@
 #
 #   differential-gate.sh <head_count> <base_count>
 #
-#   0  head < base   - the PR strictly reduces the finding count
-#   1  otherwise     - blocked
+#   0  head < base - the PR strictly reduces the finding count
+#   1  blocked
 #   2  bad invocation
 #
-# Strictly-fewer, not fewer-or-equal: while findings at or above the threshold
-# are outstanding on the target branch, the only changes allowed to land are
-# ones that remove at least one. An unrelated PR leaves the count unchanged and
-# is blocked - that is the point, not a side-effect.
+# Strictly fewer, not fewer-or-equal: while findings are outstanding on the
+# target, only changes that remove one may land. An unrelated PR leaves the
+# count level and is blocked - the point, not a side-effect.
 #
-# A PR that removes two findings and introduces a third still passes (2 -> 1).
-# Accepted deliberately: the count is the whole contract, so this needs no
-# fingerprinting and cannot be fooled by a line shift.
+# A PR removing two findings and adding a third still passes (2 -> 1). Accepted
+# deliberately: the count is the whole contract, so there is nothing to
+# fingerprint and a line shift cannot fool it.
 
 set -uo pipefail
 
@@ -32,9 +31,9 @@ case "$HEAD_COUNT" in '' | *[!0-9]*) usage "head count '$HEAD_COUNT' is not a no
 case "$BASE_COUNT" in '' | *[!0-9]*) usage "base count '$BASE_COUNT' is not a non-negative integer" ;; esac
 
 if [ "$HEAD_COUNT" -eq 0 ]; then
-    # Unreachable in the action (a clean head scan never triggers the base
-    # pass), but a gate that blocks a PR with no findings at all would be
-    # indefensible, so it is explicit rather than emergent from `0 < 0`.
+    # Unreachable in the action (a clean head scan never triggers the base pass),
+    # but explicit rather than emergent from `0 < 0`: blocking a PR with no
+    # findings would be indefensible.
     echo "No findings at or above the threshold with this PR applied. Passing."
     exit 0
 fi
@@ -53,11 +52,8 @@ echo
 if [ "$HEAD_COUNT" -gt "$BASE_COUNT" ]; then
     echo "The PR introduces $((HEAD_COUNT - BASE_COUNT)) new finding(s). Fix them."
 else
-    echo "The target branch has outstanding findings, and this PR neither adds nor"
-    echo "removes any. While findings are outstanding, only changes that reduce the"
-    echo "count can land. Either fix at least one, or wait for a fix to merge."
-    echo
-    echo "A PR that swaps one finding for another also lands here: the count is"
-    echo "unchanged, so it does not pass."
+    echo "This PR neither adds nor removes a finding. While any are outstanding,"
+    echo "only changes that reduce the count can land: fix at least one, or wait"
+    echo "for a fix to merge. A PR swapping one finding for another lands here too."
 fi
 exit 1

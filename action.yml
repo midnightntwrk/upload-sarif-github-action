@@ -21,11 +21,10 @@ inputs:
   differential_gate:
     description: >-
       Set to 'true' to re-scan the PR's target branch when the severity gate
-      fails, and pass if this PR strictly reduces the number of findings.
-      Lets two PRs that each fix one outstanding vulnerability land
-      independently. Unrelated PRs stay blocked while findings are
-      outstanding: the count must go down, not merely stay level.
-      Only applies to pull_request events; pushes always use the absolute gate.
+      fails, and pass only if this PR strictly reduces the finding count. Lets
+      two PRs that each fix one outstanding vulnerability land independently.
+      Unrelated PRs stay blocked while findings are outstanding. pull_request
+      events only; pushes always use the absolute gate.
     required: false
     default: "false"
   skip_opengrep_scan:
@@ -137,9 +136,8 @@ runs:
         name: sarif_reports
         path: scan_reports
 
-    # The gate is three steps rather than one so the expensive part - re-scanning
-    # the target branch - only runs when the cheap absolute gate has already
-    # failed. A green PR pays nothing.
+    # Three steps so the expensive part - re-scanning the target branch - runs
+    # only when the cheap absolute gate has already failed. Green PRs pay nothing.
     - name: Fail on severity
       id: severity_gate
       shell: bash
@@ -186,10 +184,9 @@ runs:
         "$ACTION_PATH/scripts/materialise-base.sh" \
           "$BASE_SHA" "$base_dir" "$GITHUB_WORKSPACE"
 
-        # Same scanners, same binaries, same vuln DB fetch, same job: the two
-        # counts are comparable precisely because they are produced minutes
-        # apart in one run. A cached base scan from an earlier day would drift
-        # as Trivy's database updates and invent phantom findings.
+        # Same binaries, same vuln DB fetch, same job: the counts are comparable
+        # because they are produced minutes apart. A base scan cached from an
+        # earlier day drifts as Trivy's database updates, inventing findings.
         /tmp/earth "${ACTION_PATH}+scan" \
           --USER_SOURCE_DIR="$base_dir" \
           --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
@@ -200,9 +197,8 @@ runs:
           --SKIP_TRIVY_SCAN="$SKIP_TRIVY_SCAN" \
           --SKIP_GITLEAKS_SCAN="$SKIP_GITLEAKS_SCAN" || true
 
-        # Base reports go to their own directory: the head SARIFs have already
-        # been uploaded by this point, and mixing the two would misattribute
-        # target-branch findings to the PR.
+        # Own directory: head SARIFs are already uploaded by now, and mixing the
+        # two would misattribute target-branch findings to the PR.
         rm -rf scan_reports_base
         mkdir -p scan_reports_base
         src="$(realpath "$ACTION_PATH/scan_reports" 2>/dev/null || true)"

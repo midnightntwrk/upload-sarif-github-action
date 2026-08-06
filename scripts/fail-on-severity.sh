@@ -4,15 +4,13 @@
 #
 #   fail-on-severity.sh <threshold> [reports_dir]
 #
-# Exit status is three-valued, because the differential gate has to tell a
-# clean scan from a broken invocation:
-#
 #   0  no findings at or above the threshold
-#   1  one or more findings at or above the threshold
-#   2  bad invocation (unknown threshold, unreadable reports)
+#   1  one or more at or above it
+#   2  bad invocation - distinct from 0 so the differential gate cannot read a
+#      broken run as a clean scan
 #
-# Set FINDINGS_COUNT_FILE to have the count written there. stdout stays
-# human-readable, so a finding message can never be mistaken for the count.
+# FINDINGS_COUNT_FILE, if set, receives the count; stdout stays human-readable
+# so a finding message can never be parsed as the count.
 
 set -uo pipefail
 
@@ -36,7 +34,7 @@ COUNT_FILE="${FINDINGS_COUNT_FILE:-}"
 THRESHOLD_N="$(jq -rn --argjson s "$SEVERITIES" --arg t "$THRESHOLD" '$s[$t] // empty')"
 [ -n "$THRESHOLD_N" ] || usage "unknown severity threshold '${1}' (accepted: $(jq -rn --argjson s "$SEVERITIES" '$s | keys_unsorted | join(", ") | ascii_downcase'))"
 
-# Emit the count even on the early-return paths, so callers never read a stale file.
+# Written on every non-error path, so callers never read a stale file.
 write_count() {
     [ -n "$COUNT_FILE" ] && printf '%s\n' "$1" > "$COUNT_FILE"
     return 0
@@ -47,10 +45,9 @@ sarifs=("$REPORTS_DIR"/*.sarif)
 shopt -u nullglob
 
 if [ ${#sarifs[@]} -eq 0 ]; then
-    # Not fatal: a caller may gate a directory that legitimately has no reports
-    # yet. It IS worth shouting about, because the old code silently exited 0
-    # here (the jq failure inside a process substitution never propagated),
-    # which turned a misnamed reports dir into a green build.
+    # Not fatal, but worth shouting about: this used to exit 0 silently (the jq
+    # failure inside a process substitution never propagated), so a misnamed
+    # reports dir was a green build.
     echo "::warning::no SARIF files in '$REPORTS_DIR' - nothing to gate"
     write_count 0
     exit 0
@@ -59,28 +56,24 @@ fi
 count=0
 unknown=0
 
-US=$'\x1f'  # Fields are unit-separated, not tab-separated: tab is IFS
-            # whitespace, so `read` collapses runs of it and drops empty
-            # fields, shifting every column after a finding with no location.
+# Unit-separated, not tab: tab is IFS whitespace, so `read` collapses runs of
+# it and drops empty fields, shifting every column after a location-less finding.
+US=$'\x1f'
 
 for f in "${sarifs[@]}"; do
-    # One jq pass per file. Severity resolution happens in jq so that an
-    # unmapped value (Trivy's UNKNOWN, SARIF's level "none", Scorecard's
-    # numeric scores) is reported and skipped rather than aborting the run
-    # mid-count - a partial count is a wrong verdict, not a near-miss.
+    # One jq pass per file. Severity resolution lives in jq so an unmapped value
+    # (Trivy UNKNOWN, SARIF "none") is skipped rather than aborting mid-count - a
+    # partial count is a wrong verdict, not a near-miss.
     #
-    # jq's status is checked here, on the assignment. Checking it after `done
-    # < <(jq ...)` does not work: that observes the *loop's* status, which is
-    # whatever the last command in the body returned.
+    # jq's status is checked on the assignment: after `done < <(jq ...)` it is
+    # the *loop's* status, i.e. whatever the body's last command returned.
     if ! rows="$(
         jq -r --argjson map "$SEVERITIES" --argjson threshold "$THRESHOLD_N" --arg us "$US" '
             .runs[]?
-            # Rule-level defaults, by rule id, for results that carry no level
-            # of their own. SARIF 3.27.10: result.level, else the rule default,
-            # else "warning" - a result with no severity anywhere is a warning,
-            # not something to ignore. gitleaks emits no severity at all, so
-            # dropping these meant a committed private key could not fail the
-            # build at any threshold.
+            # SARIF 3.27.10: result.level, else the rule default, else warning.
+            # A severity-less result is a warning, not something to ignore -
+            # gitleaks emits none, so dropping these meant a committed private
+            # key could not fail the build at any threshold.
             | ( [ (.tool.driver.rules // [])[]
                   | select(.id != null and .defaultConfiguration.level != null)
                   | {key: .id, value: (.defaultConfiguration.level | ascii_upcase)} ]
@@ -104,8 +97,8 @@ for f in "${sarifs[@]}"; do
             | join($us)
         ' "$f"
     )"; then
-        # No count is written: a caller that read 0 out of a failed parse would
-        # pass the build, which is exactly what rc 2 exists to prevent.
+        # No count written: a caller reading 0 from a failed parse would pass
+        # the build, which is what rc 2 exists to prevent.
         echo "::error::could not parse SARIF in '$f'" >&2
         exit 2
     fi

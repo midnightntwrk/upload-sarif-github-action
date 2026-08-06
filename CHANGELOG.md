@@ -19,34 +19,22 @@ and this project adheres to
 
 ### Fixed
 
-- Results carrying no severity are no longer ignored by the
-  gate. SARIF 3.27.10 makes a result with no `level` and no
-  rule-level `defaultConfiguration.level` a `warning`; the
-  gate dropped them instead. gitleaks emits no severity at
-  all, so **no gitleaks finding could fail a build at any
-  threshold** - a committed private key scanned clean.
-  Severity now resolves as `result.level`, then
-  `properties.severity`, then the rule default, then
-  `warning`. Callers using the default `critical` threshold
-  (or `high`/`medium`) see no change in behaviour, since
-  `warning` sits below all three - see the README on why
-  secret findings still need a policy decision
-- `fail-on-severity.sh` no longer aborts on a severity
-  outside its known set. `${SEVERITY_MAP[$sev]}` under
-  `set -u` made an unmapped value (Trivy `UNKNOWN`, SARIF
-  `level: none`, Scorecard numeric scores) an unbound-variable
-  error, failing the gate with no finding named. Unmapped
-  severities are now reported as warnings and skipped
-- `fail-on-severity.sh` no longer exits 0 when there are no
-  SARIF files to read. The `jq` failure inside a process
-  substitution never propagated, so a missing or misnamed
-  reports directory silently passed CI
-- Findings with no `locations` no longer shift their message
-  into the file column: fields are unit-separated, because
-  tab is IFS whitespace and `read` collapses runs of it
-- Bad invocations (unknown or empty `fail_severity`,
-  unparseable SARIF) now exit 2 and write no count, so they
-  cannot be mistaken for a clean scan
+- Severity-less results were ignored by the gate, so **no
+  gitleaks finding could fail a build at any threshold** - a
+  committed private key scanned clean. Severity now resolves
+  as `result.level`, `properties.severity`, the rule default,
+  then `warning` (SARIF 3.27.10). No behaviour change at
+  `critical`/`high`/`medium`, which all outrank `warning`
+- Unmapped severities (Trivy `UNKNOWN`, SARIF `none`) aborted
+  the gate: `${SEVERITY_MAP[$sev]}` under `set -u` is an
+  unbound-variable error. Now warned and skipped
+- No SARIF files exited 0 - `jq`'s failure inside a process
+  substitution never propagated - so a misnamed reports
+  directory passed CI silently. Bad invocations now exit 2
+  and write no count, so they cannot read as a clean scan
+- Findings without `locations` shifted their message into the
+  file column; fields are now unit-separated, since tab is
+  IFS whitespace and `read` collapses runs of it
 - Scan the caller's workspace instead of the action's own
   checkout: `user-source` now stages `USER_SOURCE_DIR`
   (passed as `$GITHUB_WORKSPACE` by `action.yml`), since
@@ -68,15 +56,13 @@ and this project adheres to
   Unrelated PRs stay blocked while findings are outstanding —
   the count must go down, not merely stay level. Off by
   default; `pull_request` events only
-- `tests/run-tests.sh` and an `earth +test` target: unit tests
-  for the gate scripts over SARIF fixtures, no network or
-  scanners needed
-- `tests/test-materialise-base.sh`: tests for base-tree
-  checkout against this repo's own git objects
+- `tests/run-tests.sh` and an `earth +test` target: 40 unit
+  tests over SARIF fixtures and a scratch git repo, no
+  network or scanners needed
 - `tests/integration-differential.sh`: end-to-end test of the
   gate against a real gitleaks scan of two trees differing by
-  one secret, asserting the scanner fires at all before
-  comparing counts
+  one secret, asserting the scanner fires before comparing
+  counts
 - `scripts/materialise-base.sh`: base-tree checkout extracted
   from `action.yml` so it can be tested outside a PR event
 - CI jobs for shellcheck, unit tests and the integration test

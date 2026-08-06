@@ -11,11 +11,9 @@
 #
 # Set GH_TOKEN to authenticate the fetch on a private repo.
 #
-# `git archive` rather than a worktree or a second clone: it yields the tree
-# with no .git, which is what the scanners expect. +user-source strips .git
-# anyway, so a base tree that still carried history would make gitleaks and
-# Scorecard behave differently across the two passes and the counts would not
-# be comparable.
+# `git archive`, not a worktree or second clone: it yields a history-free tree,
+# which is what +user-source stages anyway. A base tree carrying .git would make
+# gitleaks and Scorecard behave differently across the two passes.
 
 set -uo pipefail
 
@@ -34,8 +32,7 @@ REPO="${3:-${GITHUB_WORKSPACE:-.}}"
 [ -d "$REPO" ] || usage "repo directory '$REPO' does not exist"
 git -C "$REPO" rev-parse --git-dir > /dev/null 2>&1 || usage "'$REPO' is not a git repository"
 
-# Token via GIT_CONFIG_* rather than argv or .git/config: argv is visible to
-# any other process on the runner via `ps`, and config persists on disk.
+# Token via GIT_CONFIG_*, not argv (visible via `ps`) or .git/config (persists).
 if [ -n "${GH_TOKEN:-}" ]; then
     b64="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
     export GIT_CONFIG_COUNT=1
@@ -46,17 +43,14 @@ fi
 # actions/checkout is shallow by default, so the target-branch commit is
 # usually absent even though the ref exists upstream.
 if ! git -C "$REPO" cat-file -e "${REV}^{commit}" 2>/dev/null; then
-    # A remote can be asked for an object name or a ref, and nothing else. Sent
-    # a rev expression, git says `fatal: invalid refspec 'HEAD~1'`, which does
-    # not hint at the cause - and it only shows up on a shallow clone, where
-    # the expression could not be resolved locally first.
+    # A remote takes object names and refs, nothing else. Sent a rev expression
+    # git says `fatal: invalid refspec`, which hints at nothing - and only on a
+    # shallow clone, where it could not be resolved locally first.
     case "$REV" in
         *'~'* | *'^'* | *'@{'* | *:*)
             echo "::error::'$REV' is not present locally and is not a fetchable object name" >&2
-            echo "  Rev expressions (~ ^ @{} :) cannot be fetched from a remote; only a full" >&2
-            echo "  commit SHA or a ref name can. This usually means a shallow clone, where" >&2
-            echo "  the expression could not be resolved locally either." >&2
-            echo "  Resolve it first:  git rev-parse '$REV'" >&2
+            echo "  Rev expressions (~ ^ @{} :) are not fetchable; pass a full commit SHA" >&2
+            echo "  or a ref name. Resolve it first:  git rev-parse '$REV'" >&2
             exit 1
             ;;
     esac
@@ -70,9 +64,8 @@ if ! git -C "$REPO" cat-file -e "${REV}^{commit}" 2>/dev/null; then
     fi
 fi
 
-# Populate a staging directory and move it into place only once it is complete.
-# A half-extracted tree would scan as fewer findings than the target branch
-# really has, which reads as "this PR fixed something".
+# Staged, then moved into place once complete: a half-extracted tree scans as
+# fewer findings than the target really has, reading as "this PR fixed something".
 staging="${DEST}.partial.$$"
 rm -rf "$staging" "$DEST"
 mkdir -p "$staging"

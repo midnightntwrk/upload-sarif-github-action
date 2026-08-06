@@ -70,22 +70,17 @@ warning, note. Must be set on private repos.
 
 ### Severity resolution
 
-A SARIF result's severity is read in this order:
-`result.level`, then `properties.severity`, then the rule's
-`defaultConfiguration.level`, then `warning` — the SARIF
-default for a result that specifies none
+Read in order: `result.level`, `properties.severity`, the
+rule's `defaultConfiguration.level`, then `warning` — the
+SARIF default for a result specifying none
 ([SARIF 3.27.10][sarif]). A severity outside the known set
-(Trivy's `UNKNOWN`, SARIF's `none`) is reported as a warning
-annotation and not gated.
+(Trivy `UNKNOWN`, SARIF `none`) is annotated and not gated.
 
-> **gitleaks needs a policy decision.** gitleaks emits no
-> severity, so its findings resolve to `warning` and are
-> invisible at `medium` and above — including the default
-> `critical`. A committed private key will appear in the
-> Security tab and **will not fail the build**. Treating a
-> leaked credential as a severity at all is arguably the
-> wrong model: it is binary. Until that is settled, gate
-> gitleaks separately or run with a `warning` threshold.
+gitleaks emits no severity, so secret findings resolve to
+`warning`. **To fail the build on secrets, set
+`fail_severity: warning`.** At `critical` (the default),
+`high` or `medium`, a committed private key is reported to
+the Security tab but does not fail the build.
 
 [sarif]: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html#_Toc34317648
 
@@ -106,32 +101,32 @@ count:
 pass iff count(PR merged into target) < count(target)
 ```
 
-- Two PRs each fixing one of two findings: both pass (2 → 1).
-- A PR that introduces a finding: blocked.
-- A PR that swaps one finding for another: blocked — the
-  count is unchanged.
-- An unrelated PR, while findings are outstanding: blocked.
-  This is deliberate. While something major is outstanding,
-  the only changes that land are ones that reduce the count.
-- A PR that removes two findings and introduces one: passes
-  (2 → 1). The count is the whole contract.
+| Case                                  | Result  |
+| ------------------------------------- | ------- |
+| fixes one of two findings             | passes  |
+| introduces a finding                  | blocked |
+| swaps one finding for another         | blocked |
+| unrelated PR, findings outstanding    | blocked |
+| removes two findings, introduces one  | passes  |
+
+The last two are deliberate. While something is outstanding
+only changes that reduce the count land; and the count is the
+whole contract, so no fingerprinting is needed.
 
 Notes:
 
-- Costs nothing on a green PR — the second scan only runs
+- Costs nothing on a green PR — the second scan runs only
   when the first gate fails.
-- Both scans run in the same job, so they use identical
-  scanner binaries and the same Trivy database fetch. A
-  cached scan from an earlier run would drift as the vuln
-  database updates and report phantom new findings.
-- `pull_request` events only. Pushes and scheduled runs
-  always use the absolute gate, so `main` still reports the
-  true total.
-- Needs the target commit fetchable. Pass `github_token` if
-  the repo is private or the caller used
-  `persist-credentials: false`.
+- Both scans run in one job, so scanner binaries and the
+  Trivy database fetch are identical. A cached base scan
+  would drift as the database updates and report phantom
+  findings.
+- `pull_request` only; pushes and scheduled runs use the
+  absolute gate, so `main` reports the true total.
+- Needs the target commit fetchable — pass `github_token`
+  for a private repo or `persist-credentials: false`.
 - Base-branch results are **not** uploaded to the Security
-  tab; only the PR's own findings are.
+  tab.
 
 Skipping every scanner makes the action fail — the
 "Verify scan output" step requires at least one SARIF file.

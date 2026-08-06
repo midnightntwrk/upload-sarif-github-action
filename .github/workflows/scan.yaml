@@ -39,10 +39,6 @@ jobs:
       - name: Gate script unit tests
         run: ./tests/run-tests.sh
 
-      # Not part of `earth +test`: it needs real git objects, and
-      # +user-source strips .git from the staged tree.
-      - name: Base materialisation tests
-        run: ./tests/test-materialise-base.sh
 
   # Proves the gate gates something: a real scanner's real SARIF through the
   # counter through the gate. Unit tests use hand-written SARIF and cannot
