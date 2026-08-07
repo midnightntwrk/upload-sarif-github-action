@@ -12,7 +12,7 @@ COUNT_SH="$ROOT/scripts/fail-on-severity.sh"
 GATE_SH="$ROOT/scripts/differential-gate.sh"
 BASE_SH="$ROOT/scripts/materialise-base.sh"
 SEVERITY_JQ="$ROOT/scripts/severity.jq"
-SEVERITIES='{"NOTE":0,"WARNING":1,"LOW":1,"MEDIUM":2,"HIGH":3,"ERROR":4,"CRITICAL":5}'
+SEVERITIES='{"INFO":0,"NONE":0,"NOTE":0,"LOW":1,"WARNING":1,"MEDIUM":2,"HIGH":3,"ERROR":3,"CRITICAL":4}'
 
 # Keep scratch-repo git calls away from the user's config: commit signing would
 # prompt, and a global core.hooksPath would run this repo's hooks in a fixture.
@@ -32,6 +32,15 @@ count_findings() {
     run env FINDINGS_COUNT_FILE="$tmp/c" bash "$COUNT_SH" "$threshold" "$dir"
     count="$(cat "$tmp/c" 2>/dev/null || echo '<none>')"
     rm -rf "$tmp"
+}
+
+# rank <SEVERITY>  -- that severity's position on the ladder.
+#
+# Never hardcode a rank in a test. One did (`--argjson threshold 5`, when
+# CRITICAL was 5) and the day the ladder was renumbered it silently selected
+# nothing, so the assertion under it passed against an empty list.
+rank() {
+    jq -rn --argjson s "$SEVERITIES" --arg n "$1" '$s[$n]'
 }
 
 # sarif <path> <json>  -- write a one-off SARIF document

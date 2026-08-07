@@ -31,7 +31,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
 COUNT_SH="$ROOT/scripts/fail-on-severity.sh"
 SEVERITY_JQ="$ROOT/scripts/severity.jq"
-SEVERITIES='{"NOTE":0,"WARNING":1,"LOW":1,"MEDIUM":2,"HIGH":3,"ERROR":4,"CRITICAL":5}'
+SEVERITIES='{"INFO":0,"NONE":0,"NOTE":0,"LOW":1,"WARNING":1,"MEDIUM":2,"HIGH":3,"ERROR":3,"CRITICAL":4}'
 
 PASS=0
 FAIL=0
@@ -159,11 +159,41 @@ while IFS='|' read -r name report pattern sev; do
 done <<'EXPECTED'
 gitleaks |gitleaks.sarif          |private-key            |CRITICAL
 trivy    |trivy.sarif             |requirements\.txt      |CRITICAL
-opengrep |opengrep.sarif          |run-shell-injection    |ERROR
-zizmor   |zizmor.sarif            |template-injection     |ERROR
-checkov  |checkov.sarif           |CKV_AWS_20             |ERROR
-scorecard|scorecard-results.sarif |Dangerous-Workflow     |ERROR
+opengrep |opengrep.sarif          |run-shell-injection    |CRITICAL
+zizmor   |zizmor.sarif            |template-injection     |CRITICAL
+checkov  |checkov.sarif           |CKV_AWS_20             |HIGH
+scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
 EXPECTED
+
+# The calibration is policy, and policy that only exists in jq drifts. These
+# assert the ceilings hold against real scanner output, not hand-written SARIF:
+# opengrep reaches CRITICAL only on a high-confidence error, and scorecard never
+# reaches CRITICAL at all.
+echo "== the calibration ceilings hold =="
+
+if [ "$(caught dirty opengrep.sarif 'detect-child-process|insecure-websocket' CRITICAL)" = 0 ]; then
+    ok "opengrep low-confidence rules do not reach CRITICAL"
+else
+    no "a low-confidence opengrep rule was rated CRITICAL" \
+       "confidence is the only thing separating 57 rules from 310"
+fi
+
+if [ "$(caught dirty scorecard-results.sarif '.' CRITICAL)" = 0 ]; then
+    ok "scorecard never reaches CRITICAL"
+else
+    no "a scorecard score was rated CRITICAL" "it is a score out of ten, not a finding"
+fi
+
+# Dropped outright rather than downgraded: this action is the SAST, so the check
+# reports a falsehood, and Fuzzing scores a practice it cannot observe.
+for gone in SAST Fuzzing; do
+    if [ "$(caught dirty scorecard-results.sarif "^$gone\$|  $gone  " INFO)" = 0 ] \
+       && ! grep -q "\"$gone\"" "$work/reports-dirty/scorecard-results.sarif"; then
+        ok "scorecard $gone is not reported at all"
+    else
+        no "scorecard still reports $gone"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 echo "== the gate acts on what they found =="

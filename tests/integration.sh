@@ -24,7 +24,7 @@ ROOT="$(dirname "$HERE")"
 COUNT_SH="$ROOT/scripts/fail-on-severity.sh"
 GATE_SH="$ROOT/scripts/differential-gate.sh"
 SEVERITY_JQ="$ROOT/scripts/severity.jq"
-SEVERITIES='{"NOTE":0,"WARNING":1,"LOW":1,"MEDIUM":2,"HIGH":3,"ERROR":4,"CRITICAL":5}'
+SEVERITIES='{"INFO":0,"NONE":0,"NOTE":0,"LOW":1,"WARNING":1,"MEDIUM":2,"HIGH":3,"ERROR":3,"CRITICAL":4}'
 # The default a caller gets. Secrets must fail here, not merely at `warning`.
 THRESHOLD=critical
 
@@ -144,7 +144,11 @@ echo "== the .gitleaksignore line we print actually works =="
 # The fingerprint is taken from our own output rather than hardcoded, so this
 # asserts the remediation advice in the failure message is correct. Hardcoding it
 # would let the advice rot while the test stayed green.
-fingerprint="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 5 \
+#
+# Threshold 0, not the top of the ladder: we want the fingerprint, not a
+# gating decision, and a literal rank here silently empties the list the day the
+# ladder is renumbered. It did - this read `5` when CRITICAL was 5.
+fingerprint="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 \
     "$work/reports-dirty/gitleaks.sarif" | jq -r '.ignores[0] // ""')"
 
 if [ -n "$fingerprint" ]; then

@@ -70,21 +70,60 @@ warning, note. Must be set on private repos.
 
 ### Severity resolution
 
-Read in order: a severity named in the rule's
-`properties.tags`, then `result.level`,
-`properties.severity`, the rule's
-`defaultConfiguration.level`, then `warning` — the SARIF
-default for a result specifying none
-([SARIF 3.27.10][sarif]). A severity outside the known set
-(Trivy `UNKNOWN`, SARIF `none`) is annotated and not gated.
+One ladder, `CRITICAL` at the top:
 
-The rule tag comes first because it is the only one that can
-say `CRITICAL`. SARIF `level` is a four-value enum topping
-out at `error`, so a tool with a finer scale must flatten it:
-Trivy reports CRITICAL *and* HIGH as `level: error`. Read
-through `level`, a CRITICAL CVE resolves to `ERROR` — which
-ranks *below* `CRITICAL` — and the default
-`fail_severity: critical` cannot fail on one.
+```text
+INFO 0 · LOW 1 · MEDIUM 2 · HIGH 3 · CRITICAL 4
+```
+
+A severity the tool *states* is used as-is —
+`properties.severity`, then a severity named in the rule's
+`properties.tags`. Only when neither exists is SARIF `level`
+read, and then it is calibrated per tool.
+
+`level` is a reporting level (`none`/`note`/`warning`/
+`error`), not an impact, and it tops out at `error`
+([SARIF 3.27.10][sarif]). Read straight through, every tool
+that speaks only `level` is capped below `CRITICAL` and the
+default threshold gates almost nothing — a Trivy CRITICAL CVE
+resolved to `ERROR` and passed.
+
+`ERROR` is therefore no longer a severity. It stays accepted
+as a `fail_severity` value, where it means the same as
+`high`.
+
+### Per-tool calibration
+
+The ceiling differs by what each tool is in a position to
+claim.
+
+| Tool | Signal | Mapping | Ceiling |
+| --------- | -------------------- | ---------------------------------------------------------- | -------- |
+| gitleaks | none | stamped `CRITICAL` | CRITICAL |
+| trivy | rule tag + CVSS | used as stated | CRITICAL |
+| opengrep | level × confidence | `error`+high → CRITICAL, +medium → HIGH, +low → MEDIUM; `warning` → LOW | CRITICAL |
+| zizmor | per-finding level | `error` → CRITICAL, `warning` → MEDIUM, `note` → LOW | CRITICAL |
+| scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM | HIGH |
+| others | level only | `error` → HIGH, `warning` → MEDIUM, `note` → LOW | HIGH |
+
+**opengrep needs the confidence tag.** `error` alone covers
+310 of its rules — including ones opengrep itself marks `LOW
+CONFIDENCE`, such as `detect-child-process`. The pair is the
+signal; the level alone is not.
+
+**zizmor grades each finding, not each rule.**
+`template-injection` lands at `error` 47 times and `note` 23
+times on one real repository, so its own grading is kept and
+its `error` is treated as exploitable.
+
+**scorecard never reaches CRITICAL** — a score out of ten is
+not a vulnerability. Its `SAST` and `Fuzzing` checks are not
+reported at all: this action *is* the static analyser, so a
+failing SAST score states something untrue, and Fuzzing
+scores a practice this action cannot observe.
+
+A severity outside the known set (Trivy `UNKNOWN`, SARIF
+`none`) is annotated and not gated.
 
 ### Secrets always fail the build
 

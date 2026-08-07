@@ -49,31 +49,88 @@ def rule_tag_severities($map):
       | select(.value != "") ]
     | from_entries;
 
-# Rule tag, else result.level, else properties.severity, else the rule default,
-# else "warning" (SARIF 2.1.0 §3.27.10).
+# The confidence opengrep attaches to a rule, as a tag. Distinct from severity:
+# it is how sure the rule is, not how much the finding matters - but opengrep
+# offers no severity at all, so the pair (level, confidence) is the whole signal.
+def rule_confidences:
+    [ (.tool.driver.rules // [])[]
+      | select(.id != null)
+      | { key:   .id,
+          value: ( [ (.properties.tags // [])[]
+                     | tostring | ascii_upcase
+                     | select(endswith(" CONFIDENCE"))
+                     | sub(" CONFIDENCE$"; "") ]
+                   | first // "" ) }
+      | select(.value != "") ]
+    | from_entries;
+
+# Per-tool calibration onto one ladder.
 #
-# The tag goes first because it is the only one of these that can say CRITICAL
-# when the tool means it. A severity-less result is a warning, not something to
-# ignore - gitleaks emits none at all, so dropping these meant a committed
-# private key could not fail the build at any threshold.
-def severity($rule_levels; $rule_tags):
+# SARIF `level` is a reporting level - none/note/warning/error - not an impact.
+# Read straight through, every tool that speaks only `level` is capped at
+# `error` and can never reach `critical`, which is why the default threshold
+# gated almost nothing. Each tool's native signal is mapped instead, and the
+# ceiling differs by what the tool is in a position to claim.
+#
+#   opengrep   level x confidence. `error` alone covers 310 rules including ones
+#              opengrep itself marks LOW CONFIDENCE, so the pair is the signal.
+#   zizmor     grades every finding, not every rule (template-injection lands at
+#              error 47 times and note 23 times on one real repository). Its
+#              error means a workflow is exploitable.
+#   scorecard  a score out of ten, not a finding. Worth knowing, never CRITICAL.
+#   others     the plain SARIF reading. checkov lands here: level and nothing else.
+def calibrate($tool; $level; $confidence):
+    if ($tool | test("opengrep|semgrep")) then
+        if   $level == "ERROR"   then
+            if   $confidence == "HIGH" then "CRITICAL"
+            elif $confidence == "LOW"  then "MEDIUM"
+            else "HIGH" end
+        elif $level == "WARNING" then "LOW"
+        else "INFO" end
+    elif ($tool | test("zizmor")) then
+        if   $level == "ERROR"   then "CRITICAL"
+        elif $level == "WARNING" then "MEDIUM"
+        else "LOW" end
+    elif ($tool | test("scorecard")) then
+        if   $level == "ERROR"   then "HIGH"
+        elif $level == "WARNING" then "MEDIUM"
+        else "LOW" end
+    else
+        if   $level == "ERROR"   then "HIGH"
+        elif $level == "WARNING" then "MEDIUM"
+        elif $level == "NOTE"    then "LOW"
+        else $level end
+    end;
+
+# A severity the tool actually stated wins over anything inferred from a level:
+# properties.severity (gitleaks, stamped by policy) then a severity named in the
+# rule's tags (trivy). Only when neither exists is the level calibrated.
+def severity($rule_levels; $rule_tags; $rule_confs; $tool):
     ($rule_tags[.ruleId // ""] // "") as $tag
-  | (.level // "" | tostring | ascii_upcase) as $level
   | (.properties.severity // "" | tostring | ascii_upcase) as $property
-  | ($rule_levels[.ruleId // ""] // "") as $rule
-  | if $tag      != "" then $tag
-    elif $level    != "" then $level
-    elif $property != "" then $property
-    elif $rule     != "" then $rule
-    else "WARNING"
+  | ($rule_confs[.ruleId // ""] // "") as $confidence
+  # Bound before the pipe: inside `if . == ""` the dot is the level string, not
+  # the result, so a rule lookup there indexes a string and aborts the run.
+  | ($rule_levels[.ruleId // ""] // "") as $rule_level
+  | (.level // "" | tostring | ascii_upcase) as $result_level
+  | (if $result_level == "" then $rule_level else $result_level end) as $level
+  | if $property != "" then $property
+    elif $tag    != "" then $tag
+    elif $level  != "" then calibrate($tool; $level; $confidence)
+    # No level anywhere. Not something to ignore - gitleaks emits none at all,
+    # so dropping these meant a committed private key could not fail at any
+    # threshold - but nothing here justifies more than the bottom of the ladder.
+    else "LOW"
     end;
 
 [ .runs[]?
   | (.tool.driver.name // "") as $tool
   | rule_levels as $rule_levels
   | rule_tag_severities($map) as $rule_tags
+  | rule_confidences as $rule_confs
+  | ($tool | ascii_downcase) as $tool_key
   | .results[]?
-  | severity($rule_levels; $rule_tags) as $severity
+  | severity($rule_levels; $rule_tags; $rule_confs; $tool_key) as $severity
   | { tool:     $tool,
       severity: $severity,
       # null for a severity outside $map: reported, but never gated on.
