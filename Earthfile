@@ -67,8 +67,8 @@ test:
     # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
@@ -128,8 +128,8 @@ scorecard:
     # progress?"), which fails the whole build (exit 100). Acquire::Retries
     # re-fetches individual files within an attempt; the loop rides out a
     # mirror-sync window across attempts.
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
@@ -261,8 +261,8 @@ trivy:
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
     # Retry apt-get update (see the scorecard target) — rides out a mirror sync.
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
@@ -276,7 +276,13 @@ trivy:
     # vuln only: secrets are gitleaks' job, IaC misconfig is checkov's.
     # Without --exit-code trivy exits 0 on findings; non-zero is a real
     # error (e.g. DB fetch failure) and should fail the target.
-    RUN trivy fs --scanners vuln --format sarif --output /output/trivy.sarif /src
+    #
+    # --no-progress, not --quiet: the DB download is a ~100 MiB carriage-return
+    # progress bar, and earth turns every \r into a log line, so one fetch
+    # becomes thousands. --quiet would also swallow the log lines that say which
+    # DB version was used, which is the first thing you want when a finding
+    # appears or vanishes between runs.
+    RUN trivy fs --no-progress --scanners vuln --format sarif --output /output/trivy.sarif /src
 
     SAVE ARTIFACT /output/trivy.sarif AS LOCAL scan_reports/trivy.sarif
 
@@ -308,8 +314,8 @@ gitleaks:
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
 
     COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
     RUN chmod 0755 /usr/local/bin/gitleaks

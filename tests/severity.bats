@@ -142,6 +142,61 @@ teardown() {
     [ "$count" = 0 ]
 }
 
+# Trivy renders CRITICAL and HIGH both as SARIF `level: error`, because `error`
+# is the top of the level enum. Read through `level` and a CRITICAL CVE lands on
+# ERROR, which sits below CRITICAL in the ladder - so the default fail_severity
+# could not fail on one. The tool's own scale is in the rule's tags.
+@test "a Trivy CRITICAL counts at threshold critical" {
+    count_findings "$FIX/trivy" critical
+    [ "$status" -eq 1 ]
+    [ "$count" = 1 ]
+}
+
+@test "a Trivy HIGH is below threshold critical" {
+    count_findings "$FIX/trivy" critical
+    [[ "$output" == *"CVE-1111"* ]]
+    [[ "$output" != *"CVE-2222"* ]]
+}
+
+@test "both Trivy findings count at threshold high" {
+    count_findings "$FIX/trivy" high
+    [ "$count" = 2 ]
+}
+
+@test "a rule tag severity beats the result's level" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["security","CRITICAL"]}}]}},
+      "results":[{"ruleId":"R","level":"error"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+}
+
+# Otherwise "security" or a CWE id would be read as a severity.
+@test "rule tags that do not name a severity are ignored" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["vulnerability","security","CWE-89"]}}]}},
+      "results":[{"ruleId":"R","level":"error"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 0 ]
+    count_findings "$TMP/r" high
+    [ "$count" = 1 ]
+}
+
+@test "the highest severity tag wins when a rule carries several" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["LOW","CRITICAL","MEDIUM"]}}]}},
+      "results":[{"ruleId":"R","level":"note"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+}
+
+@test "a rule with no tags still falls through to the result level" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R"}]}},"results":[{"ruleId":"R","level":"error"}]}]}'
+    count_findings "$TMP/r" high
+    [ "$count" = 1 ]
+}
+
 @test "a rule-level default level is used when the result has none" {
     count_findings "$FIX/rule-default-error" high
     [ "$count" = 1 ]

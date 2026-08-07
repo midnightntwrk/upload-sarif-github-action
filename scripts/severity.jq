@@ -26,15 +26,43 @@ def rule_levels:
       | { key: .id, value: (.defaultConfiguration.level | ascii_upcase) } ]
     | from_entries;
 
-# SARIF 2.1.0 §3.27.10: result.level, else the rule default, else "warning".
-# A severity-less result is a warning, not something to ignore - gitleaks emits
-# none at all, so dropping these meant a committed private key could not fail
-# the build at any threshold.
-def severity($rule_levels):
-    (.level // "" | tostring | ascii_upcase) as $level
+# The tool's own severity scale, taken from the rule's tags and keyed by rule id.
+#
+# SARIF `level` is a four-value enum topping out at "error" (§3.27.10), so a tool
+# with a finer scale has to flatten it: Trivy renders CRITICAL *and* HIGH as
+# `level: error`. Read through `level` and a CRITICAL CVE resolves to ERROR,
+# which sits below CRITICAL in the ladder - so `fail_severity: critical`, the
+# default, could not fail on one. Verified: 7 CRITICAL CVEs, count 0, rc 0.
+#
+# Only tags naming a severity we know are considered, so "vulnerability",
+# "security" and CWE ids are ignored; the highest wins if a rule carries several.
+# Trivy is the only scanner here that tags this way - checked against real output
+# from opengrep, zizmor, checkov and scorecard, none of which carry one.
+def rule_tag_severities($map):
+    [ (.tool.driver.rules // [])[]
+      | select(.id != null)
+      | { key:   .id,
+          value: ( [ (.properties.tags // [])[]
+                     | tostring | ascii_upcase
+                     | select($map[.] != null) ]
+                   | max_by($map[.]) // "" ) }
+      | select(.value != "") ]
+    | from_entries;
+
+# Rule tag, else result.level, else properties.severity, else the rule default,
+# else "warning" (SARIF 2.1.0 §3.27.10).
+#
+# The tag goes first because it is the only one of these that can say CRITICAL
+# when the tool means it. A severity-less result is a warning, not something to
+# ignore - gitleaks emits none at all, so dropping these meant a committed
+# private key could not fail the build at any threshold.
+def severity($rule_levels; $rule_tags):
+    ($rule_tags[.ruleId // ""] // "") as $tag
+  | (.level // "" | tostring | ascii_upcase) as $level
   | (.properties.severity // "" | tostring | ascii_upcase) as $property
   | ($rule_levels[.ruleId // ""] // "") as $rule
-  | if $level    != "" then $level
+  | if $tag      != "" then $tag
+    elif $level    != "" then $level
     elif $property != "" then $property
     elif $rule     != "" then $rule
     else "WARNING"
@@ -43,8 +71,9 @@ def severity($rule_levels):
 [ .runs[]?
   | (.tool.driver.name // "") as $tool
   | rule_levels as $rule_levels
+  | rule_tag_severities($map) as $rule_tags
   | .results[]?
-  | severity($rule_levels) as $severity
+  | severity($rule_levels; $rule_tags) as $severity
   | { tool:     $tool,
       severity: $severity,
       # null for a severity outside $map: reported, but never gated on.

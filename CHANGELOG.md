@@ -48,6 +48,28 @@ and this project adheres to
 
 ### Fixed
 
+- **A Trivy `CRITICAL` CVE could not fail the build at the
+  `critical` default.** SARIF `level` is a four-value enum
+  topping out at `error`, so Trivy renders CRITICAL and HIGH
+  alike as `level: error`; read through `level` a CRITICAL CVE
+  resolved to `ERROR`, which ranks below `CRITICAL`. Verified
+  against real output: 7 CRITICAL CVEs, count 0, exit 0.
+  Severity now prefers a severity named in the rule's
+  `properties.tags`, which is where Trivy puts its own scale.
+  Pre-existing, not new in the previous release.
+  **Also raises the count at `fail_severity: medium`**: Trivy
+  MEDIUM carries `level: warning`, so it had never counted at
+  its own threshold either (16 findings to 24 on the same
+  scan). Trivy is the only scanner here that tags this way -
+  opengrep, zizmor, checkov and scorecard carry no severity
+  tag, and their verdicts are unchanged at every threshold
+- Scanner output is no longer drowned in progress redraws.
+  Trivy's ~100 MiB vulnerability-DB download and dpkg's
+  `Reading database ... N%` are carriage-return animations, and
+  earth turns every `\r` into a log line, so one fetch became
+  thousands. `trivy --no-progress` (not `--quiet`, which also
+  hides which DB version was used) and
+  `apt-get -qq -o Dpkg::Use-Pty=0`
 - `+checkov-requirements` had never worked: it installed
   pip-tools with `--no-deps`, so `pip-compile` died on a missing
   `click` the moment anyone ran it. The pin closure is now a
