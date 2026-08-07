@@ -54,6 +54,13 @@ jobs:
       - name: Integration tests (real scanner)
         run: ./tests/integration.sh
 
+      # Plants one known defect per scanner and asserts each is caught by name.
+      # A scanner that silently stops working emits an empty report, which looks
+      # exactly like a clean repository - every other test here passes happily
+      # against a dead scanner. Two full scans, so it is the slowest step.
+      - name: Canary (every scanner still finds things)
+        run: ./tests/canary.sh
+
   scan:
     runs-on: ubuntu-latest
     permissions:

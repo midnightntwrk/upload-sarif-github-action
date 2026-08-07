@@ -246,3 +246,61 @@ runs:
           exit 1
         fi
         "$ACTION_PATH/scripts/differential-gate.sh" "$HEAD_COUNT" "$BASE_COUNT"
+
+    # Last, and always(): the step above is built to fail, and a failing step
+    # ends a composite action, so anywhere earlier and the summary would appear
+    # only on green runs - backwards, since the red one is the one worth
+    # reading. Being last is also what lets it report the differential outcome:
+    # severity_gate says 'blocked', but with differential_gate a blocked head
+    # still passes on 2 -> 1, and only this point knows which happened.
+    #
+    # Costs no permissions - it writes a file, it does not call an API - so it
+    # reaches fork pull requests, where security-events: write is not granted
+    # and the Security-tab upload silently fails, and private repositories
+    # without GHAS, which get a zip of raw SARIF and nothing else.
+    - name: Job summary
+      if: always()
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        INPUT_SEVERITY: ${{ inputs.fail_severity }}
+        DIFFERENTIAL: ${{ inputs.differential_gate }}
+        EVENT_NAME: ${{ github.event_name }}
+        GATE_VERDICT: ${{ steps.severity_gate.outputs.verdict }}
+        HEAD_COUNT: ${{ steps.severity_gate.outputs.head_count }}
+        BASE_COUNT: ${{ steps.base_scan.outputs.base_count }}
+        # Locations link to the branch's own files. On a pull_request GITHUB_SHA
+        # is the ephemeral refs/pull/N/merge commit, which is not what a reader
+        # following the link expects to land on.
+        LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      run: |
+        # scan_reports only. On the differential path scan_reports_base also
+        # exists, and summing the two would report the target branch's findings
+        # as if this PR had introduced them.
+        if [ ! -d scan_reports ]; then
+          echo "no scan_reports directory - skipping the summary"
+          exit 0
+        fi
+
+        if [ -z "$INPUT_SEVERITY" ]; then
+          verdict=""
+        elif [ "$GATE_VERDICT" != "blocked" ]; then
+          verdict="Gate **passed** at \`$INPUT_SEVERITY\`."
+        elif [ "$DIFFERENTIAL" = "true" ] && [ "$EVENT_NAME" = pull_request ] \
+             && [ -n "$BASE_COUNT" ] && [ "${HEAD_COUNT:-0}" -lt "$BASE_COUNT" ]; then
+          verdict="Gate **passed** on the differential rule: $BASE_COUNT finding(s) on the"
+          verdict="$verdict target branch, $HEAD_COUNT with this PR applied."
+        else
+          verdict="Gate **failed** at \`$INPUT_SEVERITY\`."
+          if [ -n "$BASE_COUNT" ]; then
+            verdict="$verdict The count did not go down: $BASE_COUNT on the target"
+            verdict="$verdict branch, $HEAD_COUNT with this PR applied."
+          fi
+        fi
+
+        # Never fail the build over a report: the verdict is decided above, and
+        # a renderer that broke must not turn a passing scan red.
+        "$ACTION_PATH/scripts/step-summary.sh" \
+          "$INPUT_SEVERITY" scan_reports "$verdict" || {
+            echo "::warning::could not render the job summary (the gate verdict stands)"
+          }

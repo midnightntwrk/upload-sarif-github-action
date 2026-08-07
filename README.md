@@ -70,11 +70,21 @@ warning, note. Must be set on private repos.
 
 ### Severity resolution
 
-Read in order: `result.level`, `properties.severity`, the
-rule's `defaultConfiguration.level`, then `warning` — the
-SARIF default for a result specifying none
+Read in order: a severity named in the rule's
+`properties.tags`, then `result.level`,
+`properties.severity`, the rule's
+`defaultConfiguration.level`, then `warning` — the SARIF
+default for a result specifying none
 ([SARIF 3.27.10][sarif]). A severity outside the known set
 (Trivy `UNKNOWN`, SARIF `none`) is annotated and not gated.
+
+The rule tag comes first because it is the only one that can
+say `CRITICAL`. SARIF `level` is a four-value enum topping
+out at `error`, so a tool with a finer scale must flatten it:
+Trivy reports CRITICAL *and* HIGH as `level: error`. Read
+through `level`, a CRITICAL CVE resolves to `ERROR` — which
+ranks *below* `CRITICAL` — and the default
+`fail_severity: critical` cannot fail on one.
 
 ### Secrets always fail the build
 

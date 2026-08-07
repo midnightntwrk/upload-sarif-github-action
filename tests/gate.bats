@@ -64,6 +64,28 @@ gate() {
     [ "$status" -eq 1 ]
 }
 
+# `[ -lt ]` parses base 10, unlike `(( ))` and `[[ ]]` where a leading zero
+# means octal. Nothing writes a padded count today, but the verdict must not
+# hinge on which comparison operator someone reaches for next.
+@test "counts with leading zeros are read as decimal" {
+    gate 007 8
+    [ "$status" -eq 0 ]
+    gate 010 9
+    [ "$status" -eq 1 ]
+}
+
+@test "a plus-signed count is rc 2, not silently accepted" {
+    gate +1 2
+    [ "$status" -eq 2 ]
+}
+
+# One in, one out, on a target with nothing outstanding: the count is level at
+# zero, so there is nothing to reduce and nothing to block.
+@test "zero to zero passes rather than deadlocking" {
+    gate 0 0
+    [ "$status" -eq 0 ]
+}
+
 @test "a missing base count is rc 2, not a pass" {
     gate 1 ''
     [ "$status" -eq 2 ]

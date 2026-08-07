@@ -5,8 +5,8 @@ We welcome your contributions to the Midnight network! By contributing, you'll p
 ## Getting Started
 
 * **Review Existing Contributions and Issues:** Before submitting, please check if a similar issue or feature request already exists by searching our issue tracker.
-* **Understand the Project:** Familiarize yourself with Midnight's architecture, technology, and coding standards. You can find relevant information in our litepaper. 
-* **Set up Your Development Environment:** Ensure you have the necessary tools and dependencies installed. See our developer [documentation](https://docs.midnight.network/) for detailed instructions. 
+* **Understand the Project:** Familiarize yourself with Midnight's architecture, technology, and coding standards. You can find relevant information in our litepaper.
+* **Set up Your Development Environment:** Ensure you have the necessary tools and dependencies installed. See our developer [documentation](https://docs.midnight.network/) for detailed instructions.
 
 ## Submitting Issues
 
@@ -16,7 +16,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 **Issue Types:**
 
 * **Bug Report:** Provide detailed information about the issue, including steps to reproduce it, expected behavior, and actual behavior, screenshots, or any other relevant information.
-* **Documentation Improvement:** Clearly describe the improvement requested for existing content and/or raise missing areas of documentation and provide details for what should be included.  
+* **Documentation Improvement:** Clearly describe the improvement requested for existing content and/or raise missing areas of documentation and provide details for what should be included.
 * **Feature Request:** Clearly describe your feature, its benefits, and most importantly, the expected outcome. This helps us analyze the proposed solution and develop alternatives.
 * **Enhancement:** (WIP)
 
@@ -35,7 +35,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 * **Code Review:** All pull requests undergo code review by project maintainers.
   Be prepared to address feedback from reviewers.
 
-## Requirements for Acceptable Contributions:
+## Requirements for Acceptable Contributions
 
 * **Coding Standards:** Code must adhere to the coding style guides defined in our documentation
 * **Testing:** New functionality must include corresponding unit tests and integration tests.
@@ -44,6 +44,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
   ```console
   earth ./+test                        # unit tests (bats), hermetic
   ./tests/integration.sh               # end to end, needs docker
+  ./tests/canary.sh                    # every scanner still finds things
   shellcheck scripts/*.sh tests/*.sh tests/helper.bash
   ```
 
@@ -54,7 +55,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 * **License:** All contributions must be compatible with the project's license.
   Where possible all files should have this license header:
 
-```
+```text
 // This file is part of <REPLACE WITH REPOSITORY NAME>.
 // Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
@@ -62,7 +63,7 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 // You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//	http://www.apache.org/licenses/LICENSE-2.0
+//    http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -73,7 +74,43 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 
 Where this is not possible, a copy of the Apache 2.0 or the repository's top-level LICENSE file in the same directory is required
 
-## Support and Communication:
+## Upgrading a scanner
+
+Renovate raises the PR; two things it cannot do are left to you.
+
+* **Hash-pinned downloads.** Renovate bumps `ARG TRIVY_VERSION=...` but has no
+  idea the next line holds a sha256 of the old tarball, so the branch lands red
+  at `sha256sum -c`. Fix it with:
+
+  ```console
+  ./scripts/refresh-earthfile-hashes.sh   # re-derives every hash from its pin
+  ```
+
+  It only ever re-derives hashes for versions already in the file — it never
+  bumps a version, so it cannot smuggle an upgrade past review.
+
+* **`requirements.txt`.** It is `pip-compile` output, not a hand-pinned list, so
+  an in-place bump can produce a lock that violates checkov's own constraints.
+  Regenerate the whole tree instead:
+
+  ```console
+  earth +checkov-requirements              # after changing CHECKOV_VERSION
+  earth +pip-tools-requirements            # only if pip-tools itself moved
+  ```
+
+  Then re-read the diff: a checkov bump can *lower* a transitive pin, which is
+  how a CVE gets reintroduced by an upgrade.
+
+Base images (`FROM ... @sha256:`) need no manual step — Renovate's `dockerfile`
+manager owns the tag and the digest together.
+
+Renovate policy (cooldowns, schedule, grouping) lives in the org preset
+[`midnightntwrk/renovate-config`](https://github.com/midnightntwrk/renovate-config),
+not in `.github/renovate.json5` — which carries only what is specific to this
+repo. Note the `:earthfile` preset is a separate opt-in; extending the default
+alone leaves every `Earthfile` pin unmanaged.
+
+## Support and Communication
 
 Ask anything about Midnight! We're here to help. Connect with us on [Discord](https://discord.com/invite/midnightnetwork), [Telegram](https://t.me/Midnight_Network_Official), and [X](https://x.com/MidnightNtwrk) and Join the Community to stay updated and engage with other Midnight enthusiasts.
 

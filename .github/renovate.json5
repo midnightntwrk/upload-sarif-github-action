@@ -1,20 +1,72 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  // Org policy lives in midnightntwrk/renovate-config, not here. `:earthfile`
+  // is a separate opt-in - the default preset does not pull it in - and it
+  // brings both the `ARG *_VERSION` manager and the native `dockerfile` manager
+  // that tracks each `FROM` tag *and* digest.
   extends: [
-    'config:recommended',
-    'security:openssf-scorecard',
-    ':semanticCommits',
+    'github>midnightntwrk/renovate-config',
+    'github>midnightntwrk/renovate-config:earthfile',
   ],
   configMigration: true,
+
   customManagers: [
+    // The org Earthfile manager covers `ARG`/`ENV` only. earthbuild is pinned in
+    // a shell assignment inside action.yml, which nothing upstream matches.
+    // currentValue must stop at the first quote: `earthbuild_version="v0.8.17"`
+    // otherwise extracts *with* the quotes, which is not a version Renovate can
+    // bump, so the pin goes quiet rather than failing.
     {
       customType: 'regex',
-      description: "Update _version in bash scripts in actions",
+      description: 'Update *_version pins in action.yml shell blocks',
       managerFilePatterns: [
-        '/^action.yml$/',
+        '/^action\\.yml$/',
       ],
       matchStrings: [
-        '#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+?)(?:\\s+depName=(?<depName>.+?))?\\s+packageName=(?<packageName>.+?)(?:\\s+versioning=(?<versioning>[a-z-]+?))?\\s+.+?(_VERSION|_VER|_version)=(?<currentValue>.+?)\\s',
+        '#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+?)(?:\\s+depName=(?<depName>\\S+))?\\s+packageName=(?<packageName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?(?:\\s+extractVersion=(?<extractVersion>\\S+))?\\s+[^\\n]*?(?:_VERSION|_VER|_version)=[\'"]?(?<currentValue>[^\'"\\s]+)',
+      ],
+    },
+  ],
+
+  packageRules: [
+    {
+      // Renovate can bump ARG *_VERSION but cannot recompute the adjacent
+      // HASH="..." sha256 literals, so the build fails loudly at `sha256sum -c`
+      // until a human runs scripts/refresh-earthfile-hashes.sh. Say so in the PR.
+      description: 'Warn that hash-pinned downloads need a manual refresh',
+      matchManagers: ['custom.regex'],
+      matchFileNames: ['Earthfile'],
+      prBodyNotes: [
+        ':warning: This pin is paired with a `sha256` literal that Renovate cannot update. Run `scripts/refresh-earthfile-hashes.sh` on this branch and commit the result, or the build will fail at `sha256sum -c`.',
+      ],
+    },
+    {
+      // pip-tools reaches into pip internals; 7.6.0 dies on pip 26.2. The pin
+      // tracks the base image's own pip and is regenerated, never bumped.
+      description: 'Do not float pip inside the pip-tools bootstrap closure',
+      matchFileNames: ['pip-tools-requirements.txt'],
+      matchPackageNames: ['pip'],
+      enabled: false,
+    },
+    {
+      // checkov 3.2.532 added `aiohttp<3.14.0`. Every fix for aiohttp's 14 open
+      // CVEs is in 3.14.x with no backport, so taking that cap regresses this
+      // repo's own scan. Delete this rule once checkov widens the constraint -
+      // it shows up on the Dependency Dashboard as blocked, not as silence.
+      description: 'Hold checkov below the release that caps aiohttp',
+      matchPackageNames: ['checkov'],
+      allowedVersions: '<3.2.532',
+    },
+    {
+      // requirements.txt is pip-compile output. In-place bumps can produce a
+      // lock that violates checkov's own constraints (this is how aiohttp
+      // 3.14.3 ended up pinned under a checkov that caps it at <3.14).
+      // Security bumps still land - just verify with +checkov-requirements.
+      description: 'Flag that requirements.txt is generated, not hand-pinned',
+      matchFileNames: ['requirements.txt'],
+      prBodyNotes: [
+        ':warning: `requirements.txt` is `pip-compile` output. Re-run `earth +checkov-requirements` to confirm the resolver agrees with this pin.',
       ],
     },
   ],

@@ -50,7 +50,7 @@ scan:
 bats-bin:
     # Hash-pinned like every other tool here; the tarball is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
     # renovate: datasource=github-releases packageName=bats-core/bats-core
     ARG BATS_VERSION=v1.14.0
     WORKDIR /tmp
@@ -66,9 +66,9 @@ test:
     # `earth +test` is the whole suite bar the integration test. Hermetic, so the
     # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
@@ -81,18 +81,18 @@ test:
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.16.5
+    ARG OPENGREP_VERSION=v1.26.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="opengrep_manylinux_aarch64"; \
-            HASH="6b9efb7b82dbd947be472ef9623bb55c920c447a03010f2d7a1db3a9e5f96024"; \
+            HASH="3042a3b1aa98fa93407b9d66a45ab1f179b5b367e76965f56afdbd2c038fb1fa"; \
         else \
             DIST="opengrep_manylinux_x86"; \
-            HASH="feb9983a339b0f8ed4d38979e75a3d5828d3a44993f5db9d1ad9c3bacb328d57"; \
+            HASH="40c21299eeddabf743b856daa843d24f9d4a027130671cd45b3b21776fd9ab26"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o opengrep \
             "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${DIST}" && \
@@ -101,7 +101,7 @@ opengrep-bin:
 
 opengrep:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     # No apt at runtime: opengrep is a PyInstaller bundle that ships its
     # own certifi, so it can validate TLS to the rule registry without
     # the system ca-certificates package.
@@ -122,26 +122,26 @@ opengrep:
 
 scorecard:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     # Retry apt-get update: the Ubuntu mirrors intermittently serve a
     # mid-sync package index ("File has unexpected size ... Mirror sync in
     # progress?"), which fails the whole build (exit 100). Acquire::Retries
     # re-fetches individual files within an attempt; the loop rides out a
     # mirror-sync window across attempts.
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
-    ARG SCORECARD_VERSION=5.4.0
+    ARG SCORECARD_VERSION=5.5.0
     ARG SCORECARD_CHECKS
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
-            HASH="3f8b6354c62ec0287a8e9694481d834e16bff8451cf5b5dca435e8400ce5adaf"; \
+            HASH="3ce59d20c1d53e540c4a14e0da1e0d96b3b294e8ddc96a3c5a7b8a637b32991e"; \
         else \
             ARCH="amd64"; \
-            HASH="e5183aeaa5aa548fbb7318a6deb3e1038be0ef9aca24e655422ae88dfbe67502"; \
+            HASH="83b90a05c1540ef1390db1cd5711e5fd04be9c1d8537fb84d39d02092d6a8dff"; \
         fi && \
         curl -fsSL --retry 3 --retry-delay 5 -o /tmp/scorecard.tar.gz \
             "https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_${ARCH}.tar.gz" && \
@@ -168,15 +168,42 @@ scorecard:
 
     SAVE ARTIFACT /output/scorecard-results.sarif AS LOCAL scan_reports/scorecard-results.sarif
 
+pip-tools-requirements:
+    # Bootstrap-the-bootstrap: the only unhashed pip install in this file, and it
+    # never reaches a scanner image - its sole output is the hash-pinned closure
+    # committed as pip-tools-requirements.txt, which is what +checkov-requirements
+    # actually installs. Maintainer-run; review the diff before committing.
+    # renovate: datasource=docker packageName=python
+    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    # renovate: datasource=pypi packageName=pip-tools
+    ARG PIP_TOOLS_VERSION=7.6.0
+    RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
+    # --allow-unsafe pins pip and setuptools too: python:3.13-slim no longer
+    # ships setuptools, so without it the closure is short a package.
+    # pip is constrained to the base image's own version rather than resolved:
+    # pip-tools reaches into pip internals and 7.6.0 dies on pip 26.2
+    # (make_requirement_preparer() gained a required allow_editables kwarg).
+    RUN printf 'pip-tools==%s\npip==%s\n' \
+            "${PIP_TOOLS_VERSION}" "$(pip --version | awk '{print $2}')" > /tmp/pip-tools.in && \
+        pip-compile --generate-hashes --strip-extras --allow-unsafe \
+            --output-file=/tmp/pip-tools-requirements.txt /tmp/pip-tools.in
+    SAVE ARTIFACT /tmp/pip-tools-requirements.txt AS LOCAL pip-tools-requirements.txt
+
 checkov-requirements:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
-    # renovate: datasource=pypi packageName=pip-tools
-    ARG PIP_TOOLS_VERSION=7.4.1
-    RUN pip install --no-cache-dir --require-hashes --no-deps pip-tools==${PIP_TOOLS_VERSION} \
-        --hash=sha256:4c690e5fbae2f21e87843e89c26191f0d9454f362d8acdbd695716493ec8b3a9
+    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    # pip-tools needs its own deps (click, build, ...) to run at all, and
+    # --require-hashes forbids resolving them on the fly - hence the committed
+    # closure. Regenerate it with +pip-tools-requirements.
+    COPY pip-tools-requirements.txt /tmp/pip-tools-requirements.txt
+    RUN pip install --no-cache-dir --require-hashes -r /tmp/pip-tools-requirements.txt
+    # Held below 3.2.532, which is where checkov started capping aiohttp at
+    # <3.14.0. Every fix for aiohttp's 14 open CVEs landed in 3.14.x and none
+    # was backported, so accepting that cap pins a security scanner to a dead
+    # dependency line - trivy and scorecard both flag it. Lift the cap when
+    # checkov widens the constraint; +checkov-requirements will then resolve.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.2.510
+    ARG CHECKOV_VERSION=3.2.531
     # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
     # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
     RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
@@ -185,7 +212,7 @@ checkov-requirements:
 
 checkov:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d
+    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
     WORKDIR /src
 
     COPY requirements.txt /tmp/requirements.txt
@@ -208,18 +235,18 @@ checkov:
 trivy-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.72.0
+    ARG TRIVY_VERSION=0.73.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz"; \
-            HASH="2ca2c023109c2db6b2b77366b6717291452d4531167377d95c79547f0c8e3467"; \
+            HASH="13833d97e8a1a5367471c372a173180157f593bece570e20d5d925fef552f5dd"; \
         else \
             DIST="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"; \
-            HASH="bbb64b9695866ce4a7a8f5c9592002c5961cab378577fa3f8a040df362b9b2ea"; \
+            HASH="2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o trivy.tar.gz \
             "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${DIST}" && \
@@ -230,12 +257,12 @@ trivy-bin:
 
 trivy:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
     # Retry apt-get update (see the scorecard target) — rides out a mirror sync.
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
@@ -249,14 +276,20 @@ trivy:
     # vuln only: secrets are gitleaks' job, IaC misconfig is checkov's.
     # Without --exit-code trivy exits 0 on findings; non-zero is a real
     # error (e.g. DB fetch failure) and should fail the target.
-    RUN trivy fs --scanners vuln --format sarif --output /output/trivy.sarif /src
+    #
+    # --no-progress, not --quiet: the DB download is a ~100 MiB carriage-return
+    # progress bar, and earth turns every \r into a log line, so one fetch
+    # becomes thousands. --quiet would also swallow the log lines that say which
+    # DB version was used, which is the first thing you want when a finding
+    # appears or vanishes between runs.
+    RUN trivy fs --no-progress --scanners vuln --format sarif --output /output/trivy.sarif /src
 
     SAVE ARTIFACT /output/trivy.sarif AS LOCAL scan_reports/trivy.sarif
 
 gitleaks-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=gitleaks/gitleaks
     ARG GITLEAKS_VERSION=8.30.1
@@ -278,11 +311,11 @@ gitleaks-bin:
 
 gitleaks:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
-    RUN for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
 
     COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
     RUN chmod 0755 /usr/local/bin/gitleaks
@@ -318,18 +351,18 @@ zizmor-bin:
     # Hash check is the trust anchor; TLS validation is redundant
     # (curl -k), and zizmor itself runs --offline at scan time.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.20.0@sha256:b3f1fb2a51d923260350d21b8654bbc607164a987e2f7c84a0ac199a67df812a
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
-    ARG ZIZMOR_VERSION=v1.24.1
+    ARG ZIZMOR_VERSION=v1.29.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="zizmor-aarch64-unknown-linux-gnu.tar.gz"; \
-            HASH="d66e37ef8a375fb07939c630ebf9709a6e0f20242bdc3faf672a7ed97e0b768d"; \
+            HASH="415eaa7c0a06479a701b8e44a3e812c1047decc848ec4bede7bd6bbf49f22d20"; \
         else \
             DIST="zizmor-x86_64-unknown-linux-gnu.tar.gz"; \
-            HASH="a8000f3c683319a523d3b20df0e75457ba591f049cfcbfa98966631b56733c03"; \
+            HASH="dd96df044a6e8538d5f423790f453bdd03d49e5b2bcc38214acc41a2f1297839"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o zizmor.tar.gz \
             "https://github.com/zizmorcore/zizmor/releases/download/${ZIZMOR_VERSION}/${DIST}" && \
@@ -340,7 +373,7 @@ zizmor-bin:
 
 zizmor:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:186072bba1b2f436cbb91ef2567abca677337cfc786c86e107d25b7072feef0c
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
     COPY +zizmor-bin/zizmor /usr/local/bin/zizmor
