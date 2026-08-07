@@ -209,5 +209,41 @@ else
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# The summary is the only feedback a fork pull request or a private repo without
+# GHAS gets, so "the scanner found it" is not the end of the chain - it has to
+# survive rendering too.
+echo "== the job summary reports what was found =="
+
+md="$work/summary.md"
+if GITHUB_STEP_SUMMARY="$md" bash "$ROOT/scripts/step-summary.sh" \
+       critical "$work/reports-dirty" 'Gate **failed**.' > "$work/summary.log" 2>&1; then
+    ok "the summary rendered"
+else
+    no "step-summary.sh exited non-zero" "$(tail -2 "$work/summary.log")"
+fi
+
+if grep -q 'finding(s) at or above CRITICAL' "$md"; then
+    ok "the header states the count"
+else
+    no "no count in the header" "$(head -2 "$md")"
+fi
+
+# By file, not by rule: at critical only gitleaks and trivy are above the line,
+# and both are identifiable by where they found it.
+for want in vendor/id_rsa requirements.txt; do
+    if grep -q "$want" "$md"; then
+        ok "the summary names $want"
+    else
+        no "the summary does not mention $want" "rendered $(wc -l < "$md") lines"
+    fi
+done
+
+if grep -q '<details><summary>' "$md"; then
+    ok "findings are folded behind <details>"
+else
+    no "nothing was folded" "the header would be buried under every finding"
+fi
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

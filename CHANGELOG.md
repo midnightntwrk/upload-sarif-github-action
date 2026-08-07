@@ -131,6 +131,27 @@ and this project adheres to
 
 ### Added
 
+- **A job summary.** Every run now renders its findings to
+  `$GITHUB_STEP_SUMMARY`: verdict and a per-scanner table
+  unfolded, every finding behind `<details>`. It needs no
+  permissions - it writes a file rather than calling an API -
+  so it reaches the three populations that previously got
+  nothing: fork pull requests, where `security-events: write`
+  is not granted and the Security-tab upload silently fails;
+  private repositories without GHAS, which got a zip of raw
+  SARIF; and any consumer unwilling to grant a token. The
+  table's `all severities` column is deliberate - a scanner
+  showing `0 | -` produced nothing at all, which is what a
+  silently broken scanner looks like. Rendered from
+  `scripts/severity.jq`, the same program the gate counts
+  with, so the summary cannot report a severity the gate
+  disagreed with
+- `tests/canary.sh`: plants one known defect per scanner and
+  asserts each is caught by name and at the expected severity,
+  then that the summary reports it. A scanner that quietly
+  stops working emits an empty report, which is
+  indistinguishable from a clean repository - every other test
+  here passes against a dead scanner
 - `differential_gate` input: when the severity gate fails on
   a pull request, re-scan the target branch in the same job
   and pass if the PR strictly reduces the finding count. Lets

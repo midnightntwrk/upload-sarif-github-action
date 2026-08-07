@@ -86,7 +86,12 @@ def severity($rule_levels; $rule_tags):
 | ( [ .[] | select(.rank == null) ] ) as $unmapped
 | { count:    ($hits | length),
     unknown:  ($unmapped | length),
+    total:    (. | length),
     tool:     ( [ .[].tool | select(. != "") ] | first // "" ),
+    # The same hits the count is taken from, unformatted, for renderers that
+    # want columns rather than a line. Emitting both from here is what keeps a
+    # report and the gate from ever disagreeing about a finding's severity.
+    hits:     [ $hits[] | { severity, rule, file, line, message } ],
     findings: [ $hits[]
                 | "\(.severity)  \(if .rule == "" then "-" else .rule end)"
                   + "  \(if .file == "" then "-" else .file end)"
