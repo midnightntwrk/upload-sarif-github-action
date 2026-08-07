@@ -269,6 +269,10 @@ runs:
         GATE_VERDICT: ${{ steps.severity_gate.outputs.verdict }}
         HEAD_COUNT: ${{ steps.severity_gate.outputs.head_count }}
         BASE_COUNT: ${{ steps.base_scan.outputs.base_count }}
+        # Locations link to the branch's own files. On a pull_request GITHUB_SHA
+        # is the ephemeral refs/pull/N/merge commit, which is not what a reader
+        # following the link expects to land on.
+        LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       run: |
         # scan_reports only. On the differential path scan_reports_base also
         # exists, and summing the two would report the target branch's findings

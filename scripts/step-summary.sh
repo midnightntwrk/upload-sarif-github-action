@@ -75,10 +75,28 @@ ROW_JQ='
   .hits
   | sort_by(-($map[.severity] // 0))[]
   | (if .line > 0 and .file != "" then "\(.file):\(.line)" else .file end) as $loc
+  # There is no path:line shorthand in GitHub markdown - a location only becomes
+  # clickable as a full blob URL. $linkbase is empty off a runner (and on a
+  # scanner that reported an absolute container path), and then the cell stays
+  # plain text rather than linking somewhere that 404s.
+  | (if $linkbase == "" or .file == "" or (.file | startswith("/"))
+     then ($loc | esc)
+     else "[\($loc | esc)](\($linkbase)/\(.file)\(if .line > 0 then "#L\(.line)" else "" end))"
+     end) as $loccell
   | "| \(.severity)"
     + " | `\(if .rule == "" then "-" else (.rule | esc) end)`"
-    + " | \(if $loc == "" then "-" else ($loc | esc) end)"
+    + " | \(if $loc == "" then "-" else $loccell end)"
     + " | \(.message | esc) |"'
+
+# Blob URL prefix for locations, when we are somewhere that has one. LINK_SHA
+# lets the caller pass a pull request's head sha: GITHUB_SHA on a pull_request
+# is the ephemeral merge commit, and a reader following the link wants the
+# branch's own file.
+LINK_SHA="${LINK_SHA:-${GITHUB_SHA:-}}"
+LINK_BASE=""
+if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "$LINK_SHA" ]; then
+    LINK_BASE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${LINK_SHA}"
+fi
 
 shopt -s nullglob
 sarifs=("$REPORTS_DIR"/*.sarif)
@@ -183,7 +201,7 @@ for f in "${sarifs[@]}"; do
     fi
     out "| Severity | Rule | Location | Detail |"
     out "| -------- | ---- | -------- | ------ |"
-    jq -r --argjson map "$SEVERITIES" "$ROW_JQ" "$tmp/$base.all.json" | head -n "$MAX_ROWS" \
+    jq -r --argjson map "$SEVERITIES" --arg linkbase "$LINK_BASE" "$ROW_JQ" "$tmp/$base.all.json" | head -n "$MAX_ROWS" \
         >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
     n="$a"
     if [ "$n" -gt "$MAX_ROWS" ]; then

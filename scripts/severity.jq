@@ -81,7 +81,13 @@ def severity($rule_levels; $rule_tags):
       rule:     (.ruleId // ""),
       file:     (.locations[0].physicalLocation.artifactLocation.uri // ""),
       line:     (.locations[0].physicalLocation.region.startLine // 0),
-      message:  ((.message.text // "") | gsub("\\s+"; " ")) } ]
+      # Trivy ends every message with `Link: [<id>](<url>)`, repeating the rule
+      # id that is already its own column. Messages are truncated for display,
+      # so boilerplate at the tail costs the package and fixed-version at the
+      # head - the two things a reader actually needs.
+      message:  ((.message.text // "")
+                 | gsub("\\s+"; " ")
+                 | sub("\\s*Link: \\[[^\\]]*\\]\\([^)]*\\)\\s*$"; "")) } ]
 | ( [ .[] | select(.rank != null and .rank >= $threshold) ] ) as $hits
 | ( [ .[] | select(.rank == null) ] ) as $unmapped
 | { count:    ($hits | length),

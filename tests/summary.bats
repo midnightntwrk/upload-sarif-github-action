@@ -143,6 +143,40 @@ summary() {
 
 # startLine is optional in SARIF, and a fabricated :0 would send a reader to a
 # line that does not exist.
+# There is no path:line shorthand in GitHub markdown; a location is only
+# clickable as a full blob URL, built from the runner's own environment.
+@test "a location links to the blob when the runner environment is present" {
+    GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r LINK_SHA=deadbeef \
+        run env -u GITHUB_STEP_SUMMARY bash "$SUMMARY_SH" high "$FIX/trivy"
+    [[ "$output" == *"](https://github.com/o/r/blob/deadbeef/requirements.txt#L2)"* ]]
+}
+
+@test "a location with no line links to the file without an anchor" {
+    GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r LINK_SHA=deadbeef \
+        run env -u GITHUB_STEP_SUMMARY bash "$SUMMARY_SH" high "$FIX/one-high"
+    [[ "$output" == *"](https://github.com/o/r/blob/deadbeef/a.py)"* ]]
+    [[ "$output" != *"#L0"* ]]
+}
+
+# Off a runner there is nothing to build a URL from, and a half-built one 404s.
+@test "a location stays plain text with no runner environment" {
+    summary "$FIX/trivy" high
+    [[ "$output" == *"| requirements.txt:2 |"* ]]
+    [[ "$output" != *"](http"* ]]
+}
+
+# A scanner reporting an absolute container path has no repo-relative file to
+# link to; linking anyway produces a URL that cannot resolve.
+@test "an absolute path is not turned into a link" {
+    sarif "$TMP/r/abs.sarif" '{"runs":[{"results":[{"ruleId":"R","level":"error",
+      "message":{"text":"m"},"locations":[{"physicalLocation":{
+      "artifactLocation":{"uri":"/src/x.py"},"region":{"startLine":3}}}]}]}]}'
+    GITHUB_SERVER_URL=https://github.com GITHUB_REPOSITORY=o/r LINK_SHA=deadbeef \
+        run env -u GITHUB_STEP_SUMMARY bash "$SUMMARY_SH" high "$TMP/r"
+    [[ "$output" == *"| /src/x.py:3 |"* ]]
+    [[ "$output" != *"](http"* ]]
+}
+
 @test "a location with no line number is not given one" {
     summary "$FIX/one-high" high
     [[ "$output" == *"| a.py |"* ]]

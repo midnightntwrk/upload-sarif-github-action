@@ -89,6 +89,27 @@ teardown() {
     [ "$count" = 1 ]
 }
 
+# Trivy tails every message with `Link: [<id>](<url>)`, repeating the rule id
+# that is already its own column. Messages get truncated for display, so the
+# boilerplate costs the package and fixed-version at the head.
+@test "a trailing Link: reference is stripped from the message" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"results":[{"ruleId":"GHSA-x","level":"error",
+      "message":{"text":"Package: rand\nFixed Version: 0.9.3\nLink: [GHSA-x](https://example.invalid/x)"}}]}]}'
+    count_findings "$TMP/r" high
+    [[ "$output" == *"Fixed Version: 0.9.3"* ]]
+    [[ "$output" != *"Link:"* ]]
+    [[ "$output" != *"example.invalid"* ]]
+}
+
+# Only at the tail, and only when it is the whole reference: a message that
+# mentions a link mid-sentence keeps its words.
+@test "a Link: that is not the trailing reference is left alone" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"results":[{"ruleId":"R","level":"error",
+      "message":{"text":"Link: [a](b) appears first, then the real detail"}}]}]}'
+    count_findings "$TMP/r" high
+    [[ "$output" == *"then the real detail"* ]]
+}
+
 @test "a multi-line message is collapsed onto one line" {
     sarif "$TMP/r/multiline.sarif" '{"runs":[{"results":[{"ruleId":"M",
       "properties":{"severity":"HIGH"},"message":{"text":"first\nsecond\tthird"}}]}]}'
