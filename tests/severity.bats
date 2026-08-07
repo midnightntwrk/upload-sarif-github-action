@@ -190,6 +190,69 @@ teardown() {
     [ "$count" = 1 ]
 }
 
+# The tag wins in both directions. Worth pinning: reading it first can *lower*
+# a severity as well as raise one, and lowering is the direction that quietly
+# stops gating something.
+@test "a rule tag can lower a severity below its level" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["security","LOW"]}}]}},
+      "results":[{"ruleId":"R","level":"error"}]}]}'
+    count_findings "$TMP/r" high
+    [ "$count" = 0 ]
+    count_findings "$TMP/r" low
+    [ "$count" = 1 ]
+}
+
+@test "a lowercase rule tag is recognised" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["critical"]}}]}},"results":[{"ruleId":"R"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+}
+
+# Trivy puts a CVSS score next to the band; a tag array is not guaranteed to be
+# all strings, and a non-string must not abort the whole count.
+@test "non-string rule tags are skipped, not fatal" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":[9.8,null,true,"CRITICAL"]}}]}},
+      "results":[{"ruleId":"R"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+}
+
+# Rule tables are per-run. Two runs in one file can reuse a rule id for
+# different rules, and one must not be scored with the other's severity.
+@test "rule tags are scoped to their own run" {
+    sarif "$TMP/r/t.sarif" '{"runs":[
+      {"tool":{"driver":{"rules":[{"id":"R","properties":{"tags":["CRITICAL"]}}]}},
+       "results":[{"ruleId":"R"}]},
+      {"tool":{"driver":{"rules":[{"id":"R","properties":{"tags":["NOTE"]}}]}},
+       "results":[{"ruleId":"R"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+    count_findings "$TMP/r" note
+    [ "$count" = 2 ]
+}
+
+# Severity is keyed by ruleId. A result identifying its rule only by index is
+# not looked up - it falls through to its own level rather than guessing.
+@test "a result with only a ruleIndex falls through to its level" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
+      {"id":"R","properties":{"tags":["CRITICAL"]}}]}},
+      "results":[{"ruleIndex":0,"level":"note"}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 0 ]
+}
+
+# note is rank 0, the bottom of the ladder, so everything is at or above it.
+@test "threshold note counts every mapped finding" {
+    sarif "$TMP/r/t.sarif" '{"runs":[{"results":[
+      {"level":"note"},{"level":"error"}]}]}'
+    count_findings "$TMP/r" note
+    [ "$status" -eq 1 ]
+    [ "$count" = 2 ]
+}
+
 @test "a rule with no tags still falls through to the result level" {
     sarif "$TMP/r/t.sarif" '{"runs":[{"tool":{"driver":{"rules":[
       {"id":"R"}]}},"results":[{"ruleId":"R","level":"error"}]}]}'
@@ -238,6 +301,48 @@ teardown() {
     [ "$status" -eq 2 ]
     [ "$count" = '<none>' ]
     [[ "$output" == *"could not parse SARIF"* ]]
+}
+
+# jq exits 0 on empty input and prints nothing, so nothing downstream fails:
+# the arithmetic quietly errors and the run reports zero findings. A scanner
+# killed part-way, a full disk or a truncated artifact would all land here, and
+# on the head scan an undercount *passes* the differential gate.
+@test "a zero-length SARIF is rc 2, not a clean scan" {
+    : > "$TMP/empty.sarif"
+    count_findings "$TMP" high
+    [ "$status" -eq 2 ]
+    [ "$count" = '<none>' ]
+}
+
+@test "the zero-length SARIF error names the file and says it is not clean" {
+    : > "$TMP/empty.sarif"
+    count_findings "$TMP" high
+    [[ "$output" == *"empty.sarif"* ]]
+    [[ "$output" == *"not a clean scan"* ]]
+}
+
+@test "a truncated SARIF does not hide findings in the other files" {
+    cp "$FIX/one-high/a.sarif" "$TMP/good.sarif"
+    : > "$TMP/truncated.sarif"
+    count_findings "$TMP" high
+    [ "$status" -eq 2 ]
+    [ "$count" = '<none>' ]
+}
+
+# Valid JSON, wrong shape. `.runs[]?` would swallow this into a count of zero,
+# which is the same lie as the empty file.
+@test "valid JSON that is not a SARIF document is rc 2" {
+    printf '[]\n' > "$TMP/array.sarif"
+    count_findings "$TMP" high
+    [ "$status" -eq 2 ]
+    [ "$count" = '<none>' ]
+}
+
+# nullglob gives us the array; the loop must not word-split it back apart.
+@test "a report filename containing a space is still counted" {
+    cp "$FIX/one-high/a.sarif" "$TMP/my report.sarif"
+    count_findings "$TMP" high
+    [ "$count" = 1 ]
 }
 
 @test "a missing severity.jq is reported, not silently ignored" {

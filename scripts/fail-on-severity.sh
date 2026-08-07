@@ -74,6 +74,20 @@ for f in "${sarifs[@]}"; do
         exit 2
     fi
 
+    # jq exits 0 on empty input and prints nothing, so this is the only thing
+    # standing between a truncated report and a clean-looking scan: the
+    # arithmetic below would error to stderr, leave the count at zero and let
+    # the run exit 0. A scanner killed part-way, a full disk or a half-written
+    # artifact all land here, and on the head scan an undercount *passes* the
+    # differential gate.
+    if [ -z "$report" ]; then
+        echo "::error::'$f' is empty - expected a SARIF document" >&2
+        echo "  A zero-length report means the scanner was interrupted or its" >&2
+        echo "  output was truncated. That is not a clean scan, so this exits 2" >&2
+        echo "  rather than reporting no findings. Re-run the scan." >&2
+        exit 2
+    fi
+
     count=$((count + $(jq -r '.count' <<< "$report")))
     unknown=$((unknown + $(jq -r '.unknown' <<< "$report")))
 

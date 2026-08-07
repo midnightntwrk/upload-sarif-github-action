@@ -88,6 +88,40 @@ teardown() {
     [[ "$output" != *"Rotate the credential"* ]]
 }
 
+# A fingerprint needs a path, so a locationless finding cannot be offered one.
+# It must still fail the build and still say how to deal with it - the missing
+# location is the scanner's problem, not a reason to go quiet.
+@test "a secret with no location still fails and still explains itself" {
+    sarif "$TMP/r/gl.sarif" '{"runs":[{"tool":{"driver":{"name":"gitleaks"}},
+      "results":[{"ruleId":"private-key","properties":{"severity":"CRITICAL"},
+      "message":{"text":"key"}}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$status" -eq 1 ]
+    [ "$count" = 1 ]
+    [[ "$output" == *"regardless of fail_severity"* ]]
+    [[ "$output" == *".gitleaks.toml"* ]]
+}
+
+# The stamp is what makes secrets outrank fail_severity, and it is applied to
+# the whole document. A run with several findings must not have only its first
+# stamped.
+@test "secrets-severity.jq stamps every result in a multi-finding run" {
+    printf '%s\n' '{"runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[
+      {"ruleId":"a"},{"ruleId":"b","properties":{"severity":"NOTE"}},
+      {"ruleId":"c","properties":{"other":1}}]}]}' > "$TMP/in.sarif"
+    run jq -r '[.runs[0].results[].properties.severity]|unique|join(",")' \
+        <(jq -f "$SECRETS_JQ" "$TMP/in.sarif")
+    [ "$output" = CRITICAL ]
+}
+
+@test "secrets-severity.jq stamps across several runs" {
+    printf '%s\n' '{"runs":[{"results":[{"ruleId":"a"}]},{"results":[{"ruleId":"b"}]}]}' \
+        > "$TMP/in.sarif"
+    run jq -r '[.runs[].results[].properties.severity]|unique|join(",")' \
+        <(jq -f "$SECRETS_JQ" "$TMP/in.sarif")
+    [ "$output" = CRITICAL ]
+}
+
 @test "no secrets guidance when a gitleaks scan is clean" {
     printf '%s\n' '{"runs":[{"tool":{"driver":{"name":"gitleaks"}},"results":[]}]}' \
         > "$TMP/clean.sarif"

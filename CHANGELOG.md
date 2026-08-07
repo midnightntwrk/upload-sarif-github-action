@@ -48,6 +48,14 @@ and this project adheres to
 
 ### Fixed
 
+- **A zero-length SARIF file reported a clean scan.** `jq`
+  exits 0 on empty input and prints nothing, so the count
+  arithmetic errored to stderr, left the total at zero and the
+  run exited 0 - a scanner killed part-way, a full disk or a
+  half-written artifact all landed here. Worse on a pull
+  request: an undercount on the *head* scan passes the
+  differential gate. Now exit 2, like any other unusable
+  report. Found by edge-case testing, not in the wild
 - **A Trivy `CRITICAL` CVE could not fail the build at the
   `critical` default.** SARIF `level` is a four-value enum
   topping out at `error`, so Trivy renders CRITICAL and HIGH
