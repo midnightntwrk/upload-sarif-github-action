@@ -39,6 +39,17 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 
 * **Coding Standards:** Code must adhere to the coding style guides defined in our documentation
 * **Testing:** New functionality must include corresponding unit tests and integration tests.
+  Run them with:
+
+  ```console
+  earth ./+test                        # unit tests (bats), hermetic
+  ./tests/integration.sh               # end to end, needs docker
+  shellcheck scripts/*.sh tests/*.sh tests/helper.bash
+  ```
+
+  `earth ./+test` pins bats and jq itself, so it needs nothing installed
+  but earth and docker. To run bats directly, install it
+  (`brew install bats-core`) and run `bats tests/`.
 * **Documentation:** Code changes should be accompanied by proposed relevant documentation updates.
 * **License:** All contributions must be compatible with the project's license.
   Where possible all files should have this license header:

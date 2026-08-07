@@ -18,6 +18,15 @@ inputs:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
     default: "critical"
+  differential_gate:
+    description: >-
+      Set to 'true' to re-scan the PR's target branch when the severity gate
+      fails, and pass only if this PR strictly reduces the finding count. Lets
+      two PRs that each fix one outstanding vulnerability land independently.
+      Unrelated PRs stay blocked while findings are outstanding. pull_request
+      events only; pushes always use the absolute gate.
+    required: false
+    default: "false"
   skip_opengrep_scan:
     description: "Set to 'true' to skip the OpenGrep SAST scan"
     required: false
@@ -74,15 +83,22 @@ runs:
         SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
         SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
       run: |
+        # Written once and re-read by the differential gate's base scan, so the
+        # two passes cannot be given different scanners. Adding a scanner means
+        # editing this list only.
+        {
+          printf -- '--SCORECARD_CHECKS=%s\n'    "$SCORECARD_CHECKS"
+          printf -- '--SKIP_OPENGREP_SCAN=%s\n'  "$SKIP_OPENGREP_SCAN"
+          printf -- '--SKIP_SCORECARD_SCAN=%s\n' "$SKIP_SCORECARD_SCAN"
+          printf -- '--SKIP_CHECKOV_SCAN=%s\n'   "$SKIP_CHECKOV_SCAN"
+          printf -- '--SKIP_ZIZMOR_SCAN=%s\n'    "$SKIP_ZIZMOR_SCAN"
+          printf -- '--SKIP_TRIVY_SCAN=%s\n'     "$SKIP_TRIVY_SCAN"
+          printf -- '--SKIP_GITLEAKS_SCAN=%s\n'  "$SKIP_GITLEAKS_SCAN"
+        } > "${RUNNER_TEMP:-/tmp}/scan-flags"
+        mapfile -t flags < "${RUNNER_TEMP:-/tmp}/scan-flags"
+
         /tmp/earth "${{ github.action_path }}+scan" \
-          --USER_SOURCE_DIR="$GITHUB_WORKSPACE" \
-          --SCORECARD_CHECKS="$SCORECARD_CHECKS" \
-          --SKIP_OPENGREP_SCAN="$SKIP_OPENGREP_SCAN" \
-          --SKIP_SCORECARD_SCAN="$SKIP_SCORECARD_SCAN" \
-          --SKIP_CHECKOV_SCAN="$SKIP_CHECKOV_SCAN" \
-          --SKIP_ZIZMOR_SCAN="$SKIP_ZIZMOR_SCAN" \
-          --SKIP_TRIVY_SCAN="$SKIP_TRIVY_SCAN" \
-          --SKIP_GITLEAKS_SCAN="$SKIP_GITLEAKS_SCAN"
+          --USER_SOURCE_DIR="$GITHUB_WORKSPACE" "${flags[@]}"
       working-directory: ${{ github.workspace }}
 
     - name: Collect SARIF files
@@ -127,9 +143,106 @@ runs:
         name: sarif_reports
         path: scan_reports
 
+    # Three steps so the expensive part - re-scanning the target branch - runs
+    # only when the cheap absolute gate has already failed. Green PRs pay nothing.
     - name: Fail on severity
+      id: severity_gate
       shell: bash
       if: inputs.fail_severity != ''
       env:
         INPUT_SEVERITY: ${{ inputs.fail_severity }}
-      run: ${{ github.action_path }}/scripts/fail-on-severity.sh "$INPUT_SEVERITY"
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        count_file="${RUNNER_TEMP:-/tmp}/head-findings-count"
+        set +e
+        FINDINGS_COUNT_FILE="$count_file" \
+          "$ACTION_PATH/scripts/fail-on-severity.sh" "$INPUT_SEVERITY" scan_reports
+        rc=$?
+        set -e
+        case "$rc" in
+          0) echo "verdict=pass" >> "$GITHUB_OUTPUT" ;;
+          1) echo "verdict=blocked" >> "$GITHUB_OUTPUT"
+             echo "head_count=$(cat "$count_file")" >> "$GITHUB_OUTPUT" ;;
+          *) echo "::error::severity gate could not run (exit $rc) - see above"
+             exit 1 ;;
+        esac
+
+    - name: Scan target branch for comparison
+      id: base_scan
+      if: >-
+        steps.severity_gate.outputs.verdict == 'blocked'
+        && inputs.differential_gate == 'true'
+        && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        INPUT_SEVERITY: ${{ inputs.fail_severity }}
+        ACTION_PATH: ${{ github.action_path }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        base_dir="${RUNNER_TEMP:-/tmp}/base-src"
+        "$ACTION_PATH/scripts/materialise-base.sh" \
+          "$BASE_SHA" "$base_dir" "$GITHUB_WORKSPACE"
+
+        # Same binaries, same vuln DB fetch, same job: the counts are comparable
+        # because they are produced minutes apart. A base scan cached from an
+        # earlier day drifts as Trivy's database updates, inventing findings.
+        flags_file="${RUNNER_TEMP:-/tmp}/scan-flags"
+        if [ ! -f "$flags_file" ]; then
+          echo "::error::$flags_file is missing - the head scan step did not run"
+          exit 1
+        fi
+        mapfile -t flags < "$flags_file"
+
+        # --no-cache is required, not a precaution. +user-source stages the tree
+        # with LOCALLY, so its contents do not enter the cache key of the
+        # scanner targets that COPY from it. Without this, the base scan in the
+        # same job is served the head scan's SARIF: the counts come out equal,
+        # the gate blocks every PR, and it looks exactly like correct policy.
+        # Verified by scanning two different trees in sequence - the second
+        # returned the first's findings, including its file paths.
+        /tmp/earth --no-cache "${ACTION_PATH}+scan" \
+          --USER_SOURCE_DIR="$base_dir" "${flags[@]}" || true
+
+        # Own directory: head SARIFs are already uploaded by now, and mixing the
+        # two would misattribute target-branch findings to the PR.
+        rm -rf scan_reports_base
+        mkdir -p scan_reports_base
+        src="$(realpath "$ACTION_PATH/scan_reports" 2>/dev/null || true)"
+        if [ -n "$src" ] && [ -d "$src" ]; then
+          cp -r "$src/." scan_reports_base/
+        fi
+
+        count_file="${RUNNER_TEMP:-/tmp}/base-findings-count"
+        set +e
+        FINDINGS_COUNT_FILE="$count_file" \
+          "$ACTION_PATH/scripts/fail-on-severity.sh" "$INPUT_SEVERITY" scan_reports_base
+        rc=$?
+        set -e
+        if [ "$rc" -gt 1 ]; then
+          echo "::error::could not count findings on the target branch (exit $rc)"
+          exit 1
+        fi
+        echo "base_count=$(cat "$count_file")" >> "$GITHUB_OUTPUT"
+
+    - name: Severity verdict
+      if: steps.severity_gate.outputs.verdict == 'blocked'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        DIFFERENTIAL: ${{ inputs.differential_gate }}
+        EVENT_NAME: ${{ github.event_name }}
+        HEAD_COUNT: ${{ steps.severity_gate.outputs.head_count }}
+        BASE_COUNT: ${{ steps.base_scan.outputs.base_count }}
+      run: |
+        if [ "$DIFFERENTIAL" != "true" ]; then
+          echo "::error::findings at or above the severity threshold (see above)"
+          exit 1
+        fi
+        if [ "$EVENT_NAME" != "pull_request" ]; then
+          echo "::error::findings at or above the severity threshold (see above)"
+          echo "differential_gate is enabled but only applies to pull_request events;" \
+               "this is a '$EVENT_NAME' event, so the absolute gate applies."
+          exit 1
+        fi
+        "$ACTION_PATH/scripts/differential-gate.sh" "$HEAD_COUNT" "$BASE_COUNT"

@@ -20,6 +20,40 @@ jobs:
     steps:
       - run: echo backward compatible job till shielded-iac is updated.
 
+  tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh tests/*.sh tests/helper.bash
+
+      - name: Install EarthBuild
+        run: |
+          # renovate: datasource=github-releases packageName=EarthBuild/earthbuild
+          earthbuild_version="v0.8.17"
+          curl -fsSL -o /tmp/earth "https://github.com/EarthBuild/earthbuild/releases/download/${earthbuild_version}/earth-linux-amd64"
+          echo "85b7f31020be220493c1ef89fe4e976985a72e54dd12b7dfcf17544c8d4fd880  /tmp/earth" | sha256sum -c --strict
+          chmod 0755 /tmp/earth
+          sudo mv /tmp/earth /usr/local/bin/earth
+
+      # bats and jq are pinned inside the container, so this is the same suite
+      # a developer gets from `earth +test` locally.
+      - name: Unit tests (bats)
+        run: earth ./+test
+
+      # Cannot run inside +test: it drives earth itself, so it needs docker on
+      # the host. Proves the gate gates something, and that both gitleaks
+      # exclusion mechanisms really suppress a finding - including the exact
+      # fingerprint line the build failure tells contributors to paste.
+      - name: Integration tests (real scanner)
+        run: ./tests/integration.sh
+
   scan:
     runs-on: ubuntu-latest
     permissions:

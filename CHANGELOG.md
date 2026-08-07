@@ -11,6 +11,14 @@ and this project adheres to
 
 ### Changed
 
+- **A committed secret now fails the build at every
+  `fail_severity`, including the `critical` default.** gitleaks
+  assigns no severity, so its findings are stamped `CRITICAL`
+  before the gate sees them - a leaked credential is not a
+  point on a severity scale. Potentially breaking for repos
+  containing flagged fixtures: the failure prints both
+  exclusion mechanisms and the exact `.gitleaksignore`
+  fingerprint to paste
 - Removed Checkmarx integration
   (BYOR upload, checkmarx-scan, checkmarx-scan-public)
 - Made scan action (OpenGrep, KICS, Trivy, Scorecard)
@@ -19,6 +27,35 @@ and this project adheres to
 
 ### Fixed
 
+- gitleaks scanned `/src` rather than `.`, which broke three
+  things at once: the repository's own `.gitleaks.toml` was
+  never loaded, so path allowlists were silently ignored;
+  reported paths and `.gitleaksignore` fingerprints came out
+  as `/src/...`, which no contributor could guess; and the
+  SARIF `uri` was an absolute container path that GitHub's
+  Security tab cannot map to a file in the repo
+- The differential gate's base scan needed `--no-cache`.
+  `+user-source` stages the tree with `LOCALLY`, so its
+  contents are not part of the scanner targets' cache key -
+  the second scan in a job was served the first one's SARIF,
+  making the counts always equal, blocking every PR, and
+  looking exactly like correct policy
+- Severity-less results were ignored by the gate, so **no
+  gitleaks finding could fail a build at any threshold** - a
+  committed private key scanned clean. Severity now resolves
+  as `result.level`, `properties.severity`, the rule default,
+  then `warning` (SARIF 3.27.10). No behaviour change at
+  `critical`/`high`/`medium`, which all outrank `warning`
+- Unmapped severities (Trivy `UNKNOWN`, SARIF `none`) aborted
+  the gate: `${SEVERITY_MAP[$sev]}` under `set -u` is an
+  unbound-variable error. Now warned and skipped
+- No SARIF files exited 0 - `jq`'s failure inside a process
+  substitution never propagated - so a misnamed reports
+  directory passed CI silently. Bad invocations now exit 2
+  and write no count, so they cannot read as a clean scan
+- Findings without `locations` shifted their message into the
+  file column; fields are now unit-separated, since tab is
+  IFS whitespace and `read` collapses runs of it
 - Scan the caller's workspace instead of the action's own
   checkout: `user-source` now stages `USER_SOURCE_DIR`
   (passed as `$GITHUB_WORKSPACE` by `action.yml`), since
@@ -32,6 +69,29 @@ and this project adheres to
 
 ### Added
 
+- `differential_gate` input: when the severity gate fails on
+  a pull request, re-scan the target branch in the same job
+  and pass if the PR strictly reduces the finding count. Lets
+  two PRs that each fix one of two outstanding vulnerabilities
+  land independently, instead of requiring a combined PR.
+  Unrelated PRs stay blocked while findings are outstanding —
+  the count must go down, not merely stay level. Off by
+  default; `pull_request` events only
+- `bats` test suites and an `earth +test` target: 64 unit
+  tests over SARIF fixtures and a scratch git repo, no
+  network or scanners needed. bats is hash-pinned in the
+  Earthfile like every other tool, so `earth +test` needs
+  nothing installed locally
+- `tests/integration-differential.sh`: end-to-end test of the
+  gate against a real gitleaks scan of two trees differing by
+  one secret, asserting the scanner fires before comparing
+  counts
+- `scripts/severity.jq`: severity resolution as a standalone
+  jq program, following the existing `scorecard.jq` pattern,
+  runnable and testable on its own
+- `scripts/materialise-base.sh`: base-tree checkout extracted
+  from `action.yml` so it can be tested outside a PR event
+- CI jobs for shellcheck, unit tests and the integration test
 - Trivy vulnerability scanner re-enabled as a hash-pinned
   binary release inside its own container (the previously
   disabled aquasecurity GitHub action is not used)
