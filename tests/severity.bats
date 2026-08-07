@@ -286,11 +286,25 @@ teardown() {
     [ "$count" = 1 ]
 }
 
-@test "result.level wins over properties.severity" {
+# Deliberate reversal. This asserted the opposite while `level` was read first,
+# and that ordering is what let a `level` silently override the CRITICAL stamp
+# on a secret. A severity the tool actually stated outranks one inferred from a
+# reporting level - which is all `level` is.
+@test "properties.severity wins over result.level" {
     sarif "$TMP/r/both.sarif" '{"runs":[{"results":[{"ruleId":"B",
       "level":"note","properties":{"severity":"CRITICAL"}}]}]}'
-    count_findings "$TMP/r" high
-    [ "$count" = 0 ]
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
+}
+
+# The case that motivates it: a future gitleaks emitting any level at all must
+# not be able to demote a stamped secret.
+@test "a level cannot demote a stamped secret" {
+    sarif "$TMP/r/gl.sarif" '{"runs":[{"tool":{"driver":{"name":"gitleaks"}},
+      "results":[{"ruleId":"private-key","level":"warning",
+      "properties":{"severity":"CRITICAL"}}]}]}'
+    count_findings "$TMP/r" critical
+    [ "$count" = 1 ]
 }
 
 @test "properties.severity wins over the rule default" {
@@ -400,7 +414,7 @@ teardown() {
 }
 
 @test "severity.jq raising the threshold excludes the finding" {
-    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 5 \
+    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 4 \
         "$FIX/one-high/a.sarif"
     [ "$(printf '%s' "$output" | jq -r '.count')" = 0 ]
 }

@@ -92,7 +92,7 @@ summary() {
       {"ruleId":"low","level":"note","message":{"text":"quiet"}},
       {"ruleId":"bad","level":"error","message":{"text":"loud"}}]}]}'
     summary "$TMP/r" high
-    printf '%s\n' "$output" | grep -n '^| ' | grep -q '^.*| ERROR |.*bad'
+    printf '%s\n' "$output" | grep -q '^| HIGH | `bad`'
     [ "$(printf '%s\n' "$output" | grep -n 'loud' | cut -d: -f1)" \
       -lt "$(printf '%s\n' "$output" | grep -n 'quiet' | cut -d: -f1)" ]
 }

@@ -134,13 +134,13 @@ teardown() {
 # gitleaks' format, so it must not be offered for other tools' findings.
 @test "severity.jq reports the producing tool" {
     run jq -r '.tool' <(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" \
-        --argjson threshold 5 "$FIX/gitleaks/a.sarif")
+        --argjson threshold 0 "$FIX/gitleaks/a.sarif")
     [ "$output" = gitleaks ]
 }
 
 @test "severity.jq offers an ignore fingerprint for gitleaks findings" {
     run jq -r '.ignores[0]' <(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" \
-        --argjson threshold 5 "$FIX/gitleaks/a.sarif")
+        --argjson threshold 0 "$FIX/gitleaks/a.sarif")
     [ "$output" = "vendor/id_rsa:private-key:1" ]
 }
 

@@ -11,6 +11,31 @@ and this project adheres to
 
 ### Changed
 
+- **Severities are recalibrated per tool onto one ladder, with
+  `CRITICAL` at the top.** `INFO 0 · LOW 1 · MEDIUM 2 · HIGH 3
+  · CRITICAL 4`. SARIF `level` is a reporting level, not an
+  impact, and it stops at `error` - read straight through,
+  every tool that speaks only `level` was capped below
+  `CRITICAL` and the default threshold gated almost nothing.
+  A severity the tool *states* is now used as-is; only a bare
+  `level` is calibrated. `ERROR` is no longer a severity, but
+  stays accepted as a `fail_severity` value meaning `high`
+- **This is a large behaviour change at the default
+  threshold.** opengrep `error` at high confidence and every
+  zizmor `error` now reach `CRITICAL`, so repositories that
+  saw nothing gated at `fail_severity: critical` will see a
+  great deal. Measured on one real repository's workflows:
+  0 blocking before, 71 after. Set `fail_severity` explicitly,
+  or enable `differential_gate`, before taking this
+- Scorecard's `SAST` and `Fuzzing` checks are no longer
+  reported. This action is the static analyser, so a failing
+  SAST score states something untrue, and Fuzzing scores a
+  practice the action cannot observe. Both scored 0, became
+  `level: error`, and blocked builds on the strength of it
+- Trivy's `Link: [<id>](<url>)` message tail is stripped - it
+  repeats the rule id that is already its own column, and
+  messages are truncated, so it was costing the package and
+  fixed-version at the head
 - Upgraded the scanners: opengrep 1.16.5 -> 1.26.0, scorecard
   5.4.0 -> 5.5.0, trivy 0.72.0 -> 0.73.0, zizmor 1.24.1 -> 1.29.0,
   checkov 3.2.510 -> 3.2.531, pip-tools 7.4.1 -> 7.6.0, and the

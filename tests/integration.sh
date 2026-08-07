@@ -24,7 +24,7 @@ ROOT="$(dirname "$HERE")"
 COUNT_SH="$ROOT/scripts/fail-on-severity.sh"
 GATE_SH="$ROOT/scripts/differential-gate.sh"
 SEVERITY_JQ="$ROOT/scripts/severity.jq"
-SEVERITIES='{"NOTE":0,"WARNING":1,"LOW":1,"MEDIUM":2,"HIGH":3,"ERROR":4,"CRITICAL":5}'
+SEVERITIES='{"INFO":0,"NONE":0,"NOTE":0,"LOW":1,"WARNING":1,"MEDIUM":2,"HIGH":3,"ERROR":3,"CRITICAL":4}'
 # The default a caller gets. Secrets must fail here, not merely at `warning`.
 THRESHOLD=critical
 
