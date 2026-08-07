@@ -66,12 +66,40 @@ summary() {
 
 @test "the fold names the scanner and its count" {
     summary "$FIX/two-high" high
-    [[ "$output" == *"2 finding(s) at or above HIGH</summary>"* ]]
+    [[ "$output" == *"a — 2 of 2 finding(s) at or above HIGH</summary>"* ]]
 }
 
-@test "a scanner with nothing at the threshold gets no fold" {
+# Deliberate reversal. This asserted the opposite until a real run showed why it
+# was wrong: a clean scan at `critical` still listed 525 findings in the table,
+# and folding only the gated ones made every one of them unreachable. A scanner
+# gets a fold if it found anything at all.
+@test "a scanner with findings below the threshold still gets a fold" {
     summary "$FIX/note-only" high
+    [[ "$output" == *"<details>"* ]]
+    [[ "$output" == *"none at or above HIGH</summary>"* ]]
+}
+
+@test "a scanner that found nothing at all gets no fold" {
+    sarif "$TMP/r/quiet.sarif" '{"runs":[{"tool":{"driver":{"name":"quiet"}},"results":[]}]}'
+    summary "$TMP/r" high
     [[ "$output" != *"<details>"* ]]
+}
+
+# The gated ones are the reason the build is red, so they must not be buried
+# under fifty notes inside their own scanner's fold.
+@test "rows are ordered severity-descending so gated findings come first" {
+    sarif "$TMP/r/m.sarif" '{"runs":[{"results":[
+      {"ruleId":"low","level":"note","message":{"text":"quiet"}},
+      {"ruleId":"bad","level":"error","message":{"text":"loud"}}]}]}'
+    summary "$TMP/r" high
+    printf '%s\n' "$output" | grep -n '^| ' | grep -q '^.*| ERROR |.*bad'
+    [ "$(printf '%s\n' "$output" | grep -n 'loud' | cut -d: -f1)" \
+      -lt "$(printf '%s\n' "$output" | grep -n 'quiet' | cut -d: -f1)" ]
+}
+
+@test "the fold title carries both counts when some are gated" {
+    summary "$FIX/two-high" high
+    [[ "$output" == *"2 of 2 finding(s) at or above HIGH"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -174,7 +202,7 @@ summary() {
 }
 
 # GITHUB_STEP_SUMMARY is a file path on a runner; stdout is only the local
-# fallback. Appending is required - other steps write to the same file.
+# fallback.
 @test "output goes to GITHUB_STEP_SUMMARY when it is set" {
     GITHUB_STEP_SUMMARY="$TMP/sum.md" bash "$SUMMARY_SH" high "$FIX/one-high" > "$TMP/stdout"
     [ -s "$TMP/sum.md" ]
@@ -182,9 +210,41 @@ summary() {
     grep -q "at or above HIGH" "$TMP/sum.md"
 }
 
-@test "an existing summary file is appended to, not truncated" {
-    printf 'earlier step\n' > "$TMP/sum.md"
+# The file is unique per step and starts empty, so nothing of anyone else's is
+# lost by truncating it - and truncating is what makes a second run within the
+# same step replace the report instead of stacking a second copy under the
+# first. Two headers in one summary reads as two scans.
+@test "running twice replaces the summary rather than stacking it" {
+    for _ in 1 2; do
+        GITHUB_STEP_SUMMARY="$TMP/sum.md" bash "$SUMMARY_SH" high "$FIX/one-high"
+    done
+    [ "$(grep -c '^## Security scan' "$TMP/sum.md")" = 1 ]
+}
+
+# Assert absence with a count, never with `! grep`: bash's set -e explicitly
+# exempts a command whose return value is inverted with `!`, so `! grep -q x`
+# passes whether or not x is there. This test was written that way first and
+# passed against code that did the opposite of what it claims.
+@test "a stale summary from an earlier invocation does not survive" {
+    printf '## Security scan - stale\nold finding\n' > "$TMP/sum.md"
     GITHUB_STEP_SUMMARY="$TMP/sum.md" bash "$SUMMARY_SH" high "$FIX/one-high"
-    grep -q 'earlier step' "$TMP/sum.md"
+    [ "$(grep -c 'old finding' "$TMP/sum.md")" = 0 ]
     grep -q 'at or above HIGH' "$TMP/sum.md"
+}
+
+# 1 MiB per step is a hard ceiling: past it GitHub fails the upload and raises an
+# error annotation, so an unbounded list does not merely truncate, it loses the
+# whole report and adds a scary annotation to a run that may have passed.
+@test "the unmapped list is capped rather than unbounded" {
+    jq -n '{runs:[{tool:{driver:{name:"noisy"}},
+        results:[range(0;500)|{ruleId:"R\(.)",level:"none"}]}]}' \
+        > "$TMP/r/noisy.sarif" 2>/dev/null || {
+            mkdir -p "$TMP/r"
+            jq -n '{runs:[{tool:{driver:{name:"noisy"}},
+                results:[range(0;500)|{ruleId:"R\(.)",level:"none"}]}]}' \
+                > "$TMP/r/noisy.sarif"
+        }
+    summary "$TMP/r" high
+    [ "$(printf '%s\n' "$output" | grep -c '^- `noisy`')" -le 50 ]
+    [[ "$output" == *"of 500"* ]]
 }

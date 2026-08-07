@@ -50,6 +50,14 @@ THRESHOLD_N="$(jq -rn --argjson s "$SEVERITIES" --arg t "$THRESHOLD" '$s[$t] // 
 
 out() { printf '%s\n' "$*" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"; }
 
+# Start from empty. GITHUB_STEP_SUMMARY is unique to the step and arrives empty,
+# so nothing of anyone else's is discarded - but if this ever runs twice within
+# one step (a retry wrapper, a caller invoking the action twice) appending would
+# stack a second report under the first, and two headers reads as two scans.
+# Nothing accumulates across runs either way: a job summary belongs to its run,
+# not to the pull request.
+[ -n "${GITHUB_STEP_SUMMARY:-}" ] && : > "$GITHUB_STEP_SUMMARY"
+
 # Markdown inside <details> only renders if a blank line follows </summary>.
 fold_open()  { out "<details><summary>$1</summary>"; out ""; }
 fold_close() { out ""; out "</details>"; out ""; }
@@ -64,7 +72,8 @@ fold_close() { out ""; out "</details>"; out ""; }
 # shellcheck disable=SC2016
 ROW_JQ='
   def esc: tostring | gsub("\\|"; "\\|") | gsub("`"; "'"'"'") | .[0:160];
-  .hits[]
+  .hits
+  | sort_by(-($map[.severity] // 0))[]
   | (if .line > 0 and .file != "" then "\(.file):\(.line)" else .file end) as $loc
   | "| \(.severity)"
     + " | `\(if .rule == "" then "-" else (.rule | esc) end)`"
@@ -97,6 +106,10 @@ for f in "${sarifs[@]}"; do
         continue
     fi
     [ -s "$tmp/$base.json" ] || { printf 'EMPTY\n' > "$tmp/$base.state"; continue; }
+    # Again at the bottom of the ladder, for the fold: same program, so the full
+    # listing cannot resolve a severity differently from the gated count.
+    jq -f "$JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$f" \
+        > "$tmp/$base.all.json" 2>/dev/null
     printf 'OK\n' > "$tmp/$base.state"
     total_hits=$((total_hits + $(jq -r '.count' "$tmp/$base.json")))
     total_all=$((total_all + $(jq -r '.total' "$tmp/$base.json")))
@@ -149,17 +162,30 @@ out ""
 
 # ---------------------------------------------------------------------------
 # Everything from here down is folded.
+#
+# A fold for every scanner that found anything, not only those over the
+# threshold. A clean run at `critical` still reports hundreds of findings in the
+# table above, and folding only the gated ones left every one of them
+# unreachable - the table advertised 525 findings and offered no way to see one.
+# Rows are severity-descending, so whatever is gated sits at the top of its own
+# scanner's fold.
 for f in "${sarifs[@]}"; do
     base="$(basename "$f" .sarif)"
     [ "$(cat "$tmp/$base.state")" = OK ] || continue
     n="$(jq -r '.count' "$tmp/$base.json")"
-    [ "$n" -gt 0 ] || continue
+    a="$(jq -r '.total' "$tmp/$base.json")"
+    [ "$a" -gt 0 ] || continue
 
-    fold_open "$base — $n finding(s) at or above ${THRESHOLD}"
+    if [ "$n" -gt 0 ]; then
+        fold_open "$base — $n of $a finding(s) at or above ${THRESHOLD}"
+    else
+        fold_open "$base — $a finding(s), none at or above ${THRESHOLD}"
+    fi
     out "| Severity | Rule | Location | Detail |"
     out "| -------- | ---- | -------- | ------ |"
-    jq -r "$ROW_JQ" "$tmp/$base.json" | head -n "$MAX_ROWS" \
+    jq -r --argjson map "$SEVERITIES" "$ROW_JQ" "$tmp/$base.all.json" | head -n "$MAX_ROWS" \
         >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+    n="$a"
     if [ "$n" -gt "$MAX_ROWS" ]; then
         out ""
         out "_Showing $MAX_ROWS of $n. The full set is in the \`sarif_reports\` artifact._"
@@ -177,12 +203,19 @@ for f in "${sarifs[@]}"; do
 done
 if [ "$unmapped_total" -gt 0 ]; then
     fold_open "$unmapped_total finding(s) with an unrecognised severity — reported, not gated"
+    # Capped like the finding tables. This list is the one place a pathological
+    # scan could run to thousands of lines, and 1 MiB is not a soft ceiling:
+    # past it GitHub fails the whole upload and raises an error annotation, so
+    # an uncapped list loses the report rather than trimming it.
     for f in "${sarifs[@]}"; do
         base="$(basename "$f" .sarif)"
         [ "$(cat "$tmp/$base.state")" = OK ] || continue
-        jq -r --arg b "$base" '.unmapped[]? | "- `\($b)` \(.)"' "$tmp/$base.json" \
-            >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
-    done
+        jq -r --arg b "$base" '.unmapped[]? | "- `\($b)` \(.)"' "$tmp/$base.json"
+    done | head -n "$MAX_ROWS" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+    if [ "$unmapped_total" -gt "$MAX_ROWS" ]; then
+        out ""
+        out "_Showing $MAX_ROWS of $unmapped_total. The full set is in the \`sarif_reports\` artifact._"
+    fi
     fold_close
 fi
 
