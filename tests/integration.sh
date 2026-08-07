@@ -144,7 +144,11 @@ echo "== the .gitleaksignore line we print actually works =="
 # The fingerprint is taken from our own output rather than hardcoded, so this
 # asserts the remediation advice in the failure message is correct. Hardcoding it
 # would let the advice rot while the test stayed green.
-fingerprint="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 5 \
+#
+# Threshold 0, not the top of the ladder: we want the fingerprint, not a
+# gating decision, and a literal rank here silently empties the list the day the
+# ladder is renumbered. It did - this read `5` when CRITICAL was 5.
+fingerprint="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 \
     "$work/reports-dirty/gitleaks.sarif" | jq -r '.ignores[0] // ""')"
 
 if [ -n "$fingerprint" ]; then

@@ -146,7 +146,7 @@ teardown() {
 
 @test "severity.jq offers no fingerprint for other tools" {
     run jq -r '.ignores | length' <(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" \
-        --argjson threshold 3 "$FIX/one-high/a.sarif")
+        --argjson threshold "$(rank HIGH)" "$FIX/one-high/a.sarif")
     [ "$output" = 0 ]
 }
 

@@ -396,7 +396,7 @@ teardown() {
 # severity.jq is a standalone program, so it is worth asserting directly rather
 # than only through the wrapper.
 @test "severity.jq emits the documented shape" {
-    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 3 \
+    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold "$(rank HIGH)" \
         "$FIX/one-high/a.sarif"
     [ "$status" -eq 0 ]
     [ "$(printf '%s' "$output" | jq -r '.count')" = 1 ]
@@ -406,7 +406,7 @@ teardown() {
 }
 
 @test "severity.jq puts the severity, rule and file in the finding line" {
-    run jq -r -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 3 \
+    run jq -r -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold "$(rank HIGH)" \
         "$FIX/one-high/a.sarif"
     [[ "$output" == *"HIGH"* ]]
     [[ "$output" == *"R1"* ]]
@@ -414,7 +414,7 @@ teardown() {
 }
 
 @test "severity.jq raising the threshold excludes the finding" {
-    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 4 \
+    run jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold "$(rank CRITICAL)" \
         "$FIX/one-high/a.sarif"
     [ "$(printf '%s' "$output" | jq -r '.count')" = 0 ]
 }

@@ -34,6 +34,15 @@ count_findings() {
     rm -rf "$tmp"
 }
 
+# rank <SEVERITY>  -- that severity's position on the ladder.
+#
+# Never hardcode a rank in a test. One did (`--argjson threshold 5`, when
+# CRITICAL was 5) and the day the ladder was renumbered it silently selected
+# nothing, so the assertion under it passed against an empty list.
+rank() {
+    jq -rn --argjson s "$SEVERITIES" --arg n "$1" '$s[$n]'
+}
+
 # sarif <path> <json>  -- write a one-off SARIF document
 sarif() {
     mkdir -p "$(dirname "$1")"
