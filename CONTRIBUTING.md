@@ -73,6 +73,42 @@ Ensure the title is a clear summary of the requirement and provides enough conte
 
 Where this is not possible, a copy of the Apache 2.0 or the repository's top-level LICENSE file in the same directory is required
 
+## Upgrading a scanner:
+
+Renovate raises the PR; two things it cannot do are left to you.
+
+* **Hash-pinned downloads.** Renovate bumps `ARG TRIVY_VERSION=...` but has no
+  idea the next line holds a sha256 of the old tarball, so the branch lands red
+  at `sha256sum -c`. Fix it with:
+
+  ```console
+  ./scripts/refresh-earthfile-hashes.sh   # re-derives every hash from its pin
+  ```
+
+  It only ever re-derives hashes for versions already in the file — it never
+  bumps a version, so it cannot smuggle an upgrade past review.
+
+* **`requirements.txt`.** It is `pip-compile` output, not a hand-pinned list, so
+  an in-place bump can produce a lock that violates checkov's own constraints.
+  Regenerate the whole tree instead:
+
+  ```console
+  earth +checkov-requirements              # after changing CHECKOV_VERSION
+  earth +pip-tools-requirements            # only if pip-tools itself moved
+  ```
+
+  Then re-read the diff: a checkov bump can *lower* a transitive pin, which is
+  how a CVE gets reintroduced by an upgrade.
+
+Base images (`FROM ... @sha256:`) need no manual step — Renovate's `dockerfile`
+manager owns the tag and the digest together.
+
+Renovate policy (cooldowns, schedule, grouping) lives in the org preset
+[`midnightntwrk/renovate-config`](https://github.com/midnightntwrk/renovate-config),
+not in `.github/renovate.json5` — which carries only what is specific to this
+repo. Note the `:earthfile` preset is a separate opt-in; extending the default
+alone leaves every `Earthfile` pin unmanaged.
+
 ## Support and Communication:
 
 Ask anything about Midnight! We're here to help. Connect with us on [Discord](https://discord.com/invite/midnightnetwork), [Telegram](https://t.me/Midnight_Network_Official), and [X](https://x.com/MidnightNtwrk) and Join the Community to stay updated and engage with other Midnight enthusiasts.
