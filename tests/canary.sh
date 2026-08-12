@@ -184,9 +184,10 @@ else
     no "a scorecard score was rated CRITICAL" "it is a score out of ten, not a finding"
 fi
 
-# Dropped outright rather than downgraded: this action is the SAST, so the check
-# reports a falsehood, and Fuzzing scores a practice it cannot observe.
-for gone in SAST Fuzzing; do
+# Not asked for at all, so absent from a real run: this action is the SAST,
+# Fuzzing scores a practice it cannot observe, and Packaging is a grep for
+# publish commands that scores -1 on anything it does not recognise.
+for gone in SAST Fuzzing Packaging; do
     if [ "$(caught dirty scorecard-results.sarif "^$gone\$|  $gone  " INFO)" = 0 ] \
        && ! grep -q "\"$gone\"" "$work/reports-dirty/scorecard-results.sarif"; then
         ok "scorecard $gone is not reported at all"

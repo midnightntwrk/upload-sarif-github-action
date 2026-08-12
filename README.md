@@ -57,7 +57,7 @@ All inputs are optional.
 | --------------------- | ------------------------------- | ---------- |
 | `fail_severity`       | Min severity to fail CI         | `critical` |
 | `differential_gate`   | `true` compares against target  | `false`    |
-| `scorecard_checks`    | Scorecard checks to run (CSV)   | all checks |
+| `scorecard_checks`    | Scorecard checks to run (CSV)   | see below  |
 | `skip_opengrep_scan`  | `true` skips OpenGrep (SAST)    | `false`    |
 | `skip_scorecard_scan` | `true` skips Scorecard          | `false`    |
 | `skip_checkov_scan`   | `true` skips Checkov (IaC)      | `false`    |
@@ -117,10 +117,13 @@ times on one real repository, so its own grading is kept and
 its `error` is treated as exploitable.
 
 **scorecard never reaches CRITICAL** — a score out of ten is
-not a vulnerability. Its `SAST` and `Fuzzing` checks are not
-reported at all: this action *is* the static analyser, so a
-failing SAST score states something untrue, and Fuzzing
-scores a practice this action cannot observe.
+not a vulnerability. Its checks are an enumerated allowlist
+(`--checks` has no exclude counterpart): everything it answers
+from a local checkout, less `SAST` (this action *is* the static
+analyser), `Fuzzing` (unobservable here) and `Packaging` (greps
+for known publish commands, so a tag-only action release reads
+as no packaging at all). The list is in `+scorecard`;
+`scorecard_checks` replaces it with locally-answerable names.
 
 A severity outside the known set (Trivy `UNKNOWN`, SARIF
 `none`) is annotated and not gated.

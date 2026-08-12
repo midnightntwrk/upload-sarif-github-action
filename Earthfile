@@ -135,6 +135,12 @@ scorecard:
     # renovate: datasource=github-releases packageName=ossf/scorecard
     ARG SCORECARD_VERSION=5.5.0
     ARG SCORECARD_CHECKS
+    # `--checks` is an allowlist with no exclude counterpart, so declining one
+    # means naming the rest. Everything scorecard answers from --local, less
+    # SAST (this action is the analyser), Fuzzing (unobservable) and Packaging
+    # (greps for known publish commands; a tag-only action release reads as a
+    # miss). A check added upstream is opt-in. Named in the README too.
+    ARG DEFAULT_CHECKS="Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,License,Pinned-Dependencies,Security-Policy,Token-Permissions,Vulnerabilities"
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
@@ -157,11 +163,8 @@ scorecard:
     USER scanner
 
     RUN mkdir -p /output && \
-        CHECKS_ARG="" && \
-        if [ -n "$SCORECARD_CHECKS" ]; then \
-            CHECKS_ARG="--checks $SCORECARD_CHECKS"; \
-        fi && \
-        scorecard --local . --format json --output /output/scorecard-results.json $CHECKS_ARG; \
+        scorecard --local . --format json --output /output/scorecard-results.json \
+            --checks "${SCORECARD_CHECKS:-$DEFAULT_CHECKS}"; \
         rc=$?; [ $rc -le 1 ] || exit $rc
 
     RUN jq -f /scripts/scorecard.jq /output/scorecard-results.json > /output/scorecard-results.sarif

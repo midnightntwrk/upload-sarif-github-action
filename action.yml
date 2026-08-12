@@ -11,7 +11,7 @@ inputs:
     required: false
     default: ""
   scorecard_checks:
-    description: "Comma-separated list of Scorecard checks to run. If empty, all checks run. See https://github.com/ossf/scorecard#checks for available checks."
+    description: "Comma-separated list of Scorecard checks, replacing the default allowlist (see README). Every name must be one Scorecard can answer from a local checkout. https://github.com/ossf/scorecard#checks"
     required: false
     default: ""
   fail_severity:
