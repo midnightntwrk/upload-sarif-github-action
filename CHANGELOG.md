@@ -27,11 +27,13 @@ and this project adheres to
   great deal. Measured on one real repository's workflows:
   0 blocking before, 71 after. Set `fail_severity` explicitly,
   or enable `differential_gate`, before taking this
-- Scorecard's `SAST` and `Fuzzing` checks are no longer
-  reported. This action is the static analyser, so a failing
-  SAST score states something untrue, and Fuzzing scores a
-  practice the action cannot observe. Both scored 0, became
-  `level: error`, and blocked builds on the strength of it
+- Scorecard's checks are now an enumerated `--checks` allowlist
+  (there is no exclude counterpart), dropping `SAST`, `Fuzzing`
+  and `Packaging`. This action is the static analyser, so a
+  failing SAST score states something untrue; Fuzzing scores a
+  practice it cannot observe; and Packaging greps for known
+  publish commands, so a tag-only action release reads as no
+  packaging at all. All three blocked builds
 - Trivy's `Link: [<id>](<url>)` message tail is stripped - it
   repeats the rule id that is already its own column, and
   messages are truncated, so it was costing the package and
