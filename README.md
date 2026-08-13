@@ -178,13 +178,7 @@ rot while the tests stay green.
 ### Tuning checkov
 
 Secrets are gitleaks' job, so checkov runs with its
-`secrets` framework skipped. `CKV_SECRET_*` is a bare
-entropy heuristic that fires on any high-entropy literal —
-an SS58 key or a genesis wasm blob in a chain spec, say —
-and gitleaks already covers real credentials with a
-per-repository config that checkov has no equivalent of.
-
-Everything else checkov checks is tunable from a
+`secrets` framework skipped. Everything else checkov checks is tunable from a
 `.checkov.yml` in the scanned repository's root:
 
 ```yaml
@@ -194,19 +188,108 @@ skip-check:
   - CKV_DOCKER_2
 ```
 
-The repository's file is merged onto the action's defaults
-rather than replacing them: list values union, so the
-action's own entries survive, and scalars are the
-repository's to set. Three are not, because the pipeline
-depends on them — `output`, `soft-fail` and
-`download-external-modules`. `soft-fail` is the one that
-matters: the severity gate decides pass or fail *after* the
-scan, so a repository turning it off would abort the job
-before the other scanners reported.
+A single finding can also be waived where it is, in any file
+checkov can find a comment in — Dockerfile, YAML, HCL:
 
-Selecting rules is deliberately the repository's call, up
-to and including switching all of them off. The review that
-lands the `.checkov.yml` is the control on that.
+```dockerfile
+# checkov:skip=CKV_DOCKER_2:healthcheck lives in the compose file
+```
+
+JSON has no comment syntax, which is why the `.checkov.yml`
+above has to be honoured at all.
+
+### trivy — `.trivyignore`
+
+```text
+# One id per line. A trailing exp: date makes it lapse.
+CVE-2018-18074
+CVE-2023-32681 exp:2026-11-09
+```
+
+### scorecard — `osv-scanner.toml`
+
+Scorecard's `Vulnerabilities` check reads OSV and reports
+`N existing vulnerabilities detected`. It is the one scorecard
+check with an escape hatch, and it takes justifications:
+
+```toml
+[[IgnoredVulns]]
+id = "CVE-2018-18074"
+reason = "dev-only dependency, never reaches a runtime image"
+
+[[IgnoredVulns]]
+id = "CVE-2019-11324"
+ignoreUntil = 2026-11-09
+reason = "upstream caps aiohttp <3.14.0; lift when it widens"
+```
+
+The file sits **beside the manifest** it applies to
+(`requirements.txt`, `package-lock.json`, …) and does not
+propagate to child directories, so a monorepo needs one per
+manifest. Aliases of an ignored id are ignored too.
+
+Suppression pays off in steps, not at once: the score is
+`10 - findings` floored at zero, and this action grades `0` as
+`error` (HIGH) and anything below 8 as `warning` (MEDIUM). Of
+25 findings, 16 must be ignored before the check drops off
+HIGH and 23 before it stops being reported.
+
+Every other scorecard check is a score out of ten with nothing
+to ignore. Decline the whole check via `scorecard_checks`
+instead — it is an allowlist, so name the ones you keep.
+
+### opengrep — `# nosemgrep`
+
+```python
+token = load(path)  # nosemgrep: python.lang.security.audit.hardcoded-password
+```
+
+Bare `# nosemgrep` (or `# nosem`) suppresses every rule on the
+line; ids after `:` or `=`, comma-separated, suppress only
+those. A comment on the line directly above works too, for
+languages where a trailing comment will not parse.
+
+Paths go in `.semgrepignore` at the repository root, gitignore
+syntax:
+
+```text
+:include .gitignore
+tests/fixtures/
+vendor/
+```
+
+The `:include` is doing real work, and this is the one that
+surprises: the file **replaces** opengrep's built-in ignore
+list rather than adding to it, so adding a `.semgrepignore`
+can *widen* the scan. A tree with a finding under
+`tests/fixtures/` reports nothing there until a
+`.semgrepignore` mentioning only `vendor/` is added, at which
+point the finding appears — the built-in list had been
+excluding tests, and naming one path threw the whole list
+away. `:include` is how you keep what you had.
+
+Ordinary gitignore semantics otherwise, including the rule
+that catches everyone: `!` cannot re-admit a path whose parent
+directory is already excluded, so `tests/` followed by
+`!tests/fixtures/` scans neither.
+
+### zizmor — `.github/zizmor.yml`
+
+```yaml
+rules:
+  template-injection:
+    ignore:
+      - release.yml # the whole file
+      - ci.yml:42 # one line
+      - ci.yml:42:9 # one finding, line and column
+```
+
+Inline works as well — `# zizmor: ignore[template-injection]`,
+comma-separated for several audits — but only in a YAML
+comment, not inside a block scalar. The action scans a
+directory with `.git` stripped, so discovery is
+`.github/zizmor.yml`, then `.yaml`, then the same two at the
+root.
 
 ## Differential gate
 

@@ -173,6 +173,20 @@ and this project adheres to
 
 ### Added
 
+- **README: how to exclude an expected finding, per scanner.**
+  One table plus a worked example for each of the six, with
+  the two that can express a *temporary* exception called out
+  — trivy's `exp:` date and `osv-scanner.toml`'s
+  `ignoreUntil`. Documents the mechanisms as measured, not as
+  advertised: `.trivyignore.yaml` is not auto-discovered by
+  trivy so the plain form is the only one that works here;
+  `.semgrepignore` replaces opengrep's built-in ignore list
+  rather than adding to it; scorecard's `Vulnerabilities` is
+  its only suppressible check, and its `10 - findings` score
+  means 25 findings need 16 ignored before the check drops off
+  HIGH. Also states the thing that wastes the most time: the
+  gate counts SARIF before upload, so dismissing an alert in
+  the Security tab does not unblock CI
 - **A job summary.** Every run now renders its findings to
   `$GITHUB_STEP_SUMMARY`: verdict and a per-scanner table
   unfolded, every finding behind `<details>`. It needs no
