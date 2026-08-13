@@ -4,6 +4,14 @@ skip-path:
   - .git
   - node_modules
   - scan_reports
+# Secrets are gitleaks' job; checkov owns IaC misconfiguration. Keeping both
+# would not be defence in depth: CKV_SECRET_* is a bare entropy heuristic that
+# fires on any high-entropy literal (SS58 keys, hashes, genesis wasm), and
+# unlike gitleaks it has no per-repo lever - a consumer's .checkov.yml is
+# overwritten by this one, and a JSON file takes no `# checkov:skip=` comment.
+# So its findings are unsuppressible by the repo that has to act on them.
+skip-framework:
+  - secrets
 soft-fail: true
 download-external-modules: false
 output: sarif

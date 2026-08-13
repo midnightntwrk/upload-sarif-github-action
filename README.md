@@ -175,6 +175,39 @@ rot while the tests stay green.
 
 [sarif]: https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html#_Toc34317648
 
+### Tuning checkov
+
+Secrets are gitleaks' job, so checkov runs with its
+`secrets` framework skipped. `CKV_SECRET_*` is a bare
+entropy heuristic that fires on any high-entropy literal —
+an SS58 key or a genesis wasm blob in a chain spec, say —
+and gitleaks already covers real credentials with a
+per-repository config that checkov has no equivalent of.
+
+Everything else checkov checks is tunable from a
+`.checkov.yml` in the scanned repository's root:
+
+```yaml
+skip-path:
+  - scripts/.*chain-spec.*\.json
+skip-check:
+  - CKV_DOCKER_2
+```
+
+The repository's file is merged onto the action's defaults
+rather than replacing them: list values union, so the
+action's own entries survive, and scalars are the
+repository's to set. Three are not, because the pipeline
+depends on them — `output`, `soft-fail` and
+`download-external-modules`. `soft-fail` is the one that
+matters: the severity gate decides pass or fail *after* the
+scan, so a repository turning it off would abort the job
+before the other scanners reported.
+
+Selecting rules is deliberately the repository's call, up
+to and including switching all of them off. The review that
+lands the `.checkov.yml` is the control on that.
+
 ## Differential gate
 
 By default the gate is absolute: any finding at or above

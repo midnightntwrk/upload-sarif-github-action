@@ -11,6 +11,21 @@ and this project adheres to
 
 ### Changed
 
+- **A scanned repository's `.checkov.yml` is honoured instead of
+  being overwritten.** The action used to copy its own config to
+  `/src/.checkov.yml`, over the top of the repository's, and pass
+  that to `--config-file` - which sets rather than merges. A
+  repository therefore had no lever at all, fatal for JSON, which
+  takes no `# checkov:skip=` comment. The two are now merged: list
+  values union so the action's entries survive, scalars are the
+  repository's to set, and `output`, `soft-fail` and
+  `download-external-modules` stay pinned because the pipeline
+  depends on them
+- **checkov no longer scans for secrets.** That is gitleaks' job,
+  and unlike checkov it honours a repository's own config.
+  `CKV_SECRET_*` is a bare entropy heuristic that fires on any
+  high-entropy literal - public keys and hashes in a chain spec,
+  for instance - with no way for the repository to suppress it
 - **Severities are recalibrated per tool onto one ladder, with
   `CRITICAL` at the top.** `INFO 0 · LOW 1 · MEDIUM 2 · HIGH 3
   · CRITICAL 4`. SARIF `level` is a reporting level, not an
