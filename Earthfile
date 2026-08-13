@@ -68,11 +68,14 @@ test:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq git && rm -rf /var/lib/apt/lists/*
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq git python3 python3-yaml && rm -rf /var/lib/apt/lists/*
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
     COPY tests /work/tests
+    # The merge script reads the action's own defaults, so the suite asserts
+    # against the file the checkov stage actually ships.
+    COPY .checkov.yml /work/.checkov.yml
     # A test input, not documentation: the suite asserts that the anchor printed
     # in a build failure resolves to a heading that actually exists.
     COPY README.md /work/README.md
@@ -223,13 +226,20 @@ checkov:
 
     RUN useradd -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
-    COPY .checkov.yml /src/.checkov.yml
+    # Defaults live outside /src: copying them to /src/.checkov.yml would
+    # overwrite the scanned repo's own file, which is how a consumer ended up
+    # with no way to suppress a false positive in a JSON file (no comment
+    # syntax, so `# checkov:skip=` is unavailable there too).
+    COPY .checkov.yml /action/checkov-defaults.yml
+    COPY scripts/merge-checkov-config.py /action/merge-checkov-config.py
+    RUN python3 /action/merge-checkov-config.py \
+            /action/checkov-defaults.yml /src/.checkov.yml > /action/checkov.yml
     RUN mkdir -p /output && chown scanner:scanner /output /src
     USER scanner
 
     RUN mkdir -p /output && \
         checkov -d /src \
-            --config-file /src/.checkov.yml \
+            --config-file /action/checkov.yml \
             --output-file-path /output \
             --skip-download
 
