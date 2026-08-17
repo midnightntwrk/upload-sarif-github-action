@@ -77,7 +77,8 @@ def rule_confidences:
 #   zizmor     grades every finding, not every rule (template-injection lands at
 #              error 47 times and note 23 times on one real repository). Its
 #              error means a workflow is exploitable.
-#   scorecard  a score out of ten, not a finding. Worth knowing, never CRITICAL.
+#   scorecard  a score out of ten, not a finding. Worth knowing, never CRITICAL,
+#              and a passing check (`note`, score >= 8) is NOTE, not a finding.
 #   others     the plain SARIF reading. checkov lands here: level and nothing else.
 def calibrate($tool; $level; $confidence):
     if ($tool | test("opengrep|semgrep")) then
@@ -94,7 +95,11 @@ def calibrate($tool; $level; $confidence):
     elif ($tool | test("scorecard")) then
         if   $level == "ERROR"   then "HIGH"
         elif $level == "WARNING" then "MEDIUM"
-        else "LOW" end
+        # `note` is a score of 8 or better: the check passed. Rendering that as
+        # LOW put "license file detected" in the same column as something to
+        # fix, and eight passes read as eight findings. NOTE ranks 0, so a pass
+        # is still listed and can never gate.
+        else "NOTE" end
     else
         if   $level == "ERROR"   then "HIGH"
         elif $level == "WARNING" then "MEDIUM"
