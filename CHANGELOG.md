@@ -11,6 +11,12 @@ and this project adheres to
 
 ### Changed
 
+- **A scorecard check that passed is `NOTE`, not `LOW`.** A score
+  of 8 or better means the check found nothing wrong, yet
+  `LOW  License  README.md  license file detected` sat in the
+  same column as things to fix, and eight passes read as eight
+  findings. `NOTE` ranks 0: still listed in the summary, never
+  gated at any threshold
 - **A scanned repository's `.checkov.yml` is honoured instead of
   being overwritten.** The action used to copy its own config to
   `/src/.checkov.yml`, over the top of the repository's, and pass

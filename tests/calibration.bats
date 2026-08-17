@@ -105,6 +105,22 @@ og() {
       "results":[{"ruleId":"Packaging","level":"warning"}]}]}')" = MEDIUM ]
 }
 
+# scorecard.jq emits `note` only for a score of 8 or better - the check passed.
+# "LOW  License  README.md  license file detected" is a pass rendered as a
+# finding, and a reader cannot tell it from something to fix. NOTE ranks 0, so
+# it is still listed, never gated.
+@test "scorecard note is NOTE - a passing check is not a finding" {
+    [ "$(sev scorecard '{"runs":[{"tool":{"driver":{"name":"ossf-scorecard"}},
+      "results":[{"ruleId":"License","level":"note"}]}]}')" = NOTE ]
+}
+
+@test "scorecard note does not gate at LOW" {
+    sarif "$TMP/r/s.sarif" '{"runs":[{"tool":{"driver":{"name":"ossf-scorecard"}},
+      "results":[{"ruleId":"License","level":"note"}]}]}'
+    count_findings "$TMP/r" low
+    [ "$count" = 0 ]
+}
+
 # ---------------------------------------------------------------------------
 # Tools that already state a severity keep it: nothing here second-guesses a
 # scale the tool actually has.

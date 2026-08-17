@@ -103,7 +103,7 @@ claim.
 | trivy | rule tag + CVSS | used as stated | CRITICAL |
 | opengrep | level × confidence | `error`+high → CRITICAL, +medium → HIGH, +low → MEDIUM; `warning` → LOW | CRITICAL |
 | zizmor | per-finding level | `error` → CRITICAL, `warning` → MEDIUM, `note` → LOW | CRITICAL |
-| scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM | HIGH |
+| scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM, `note` → NOTE | HIGH |
 | others | level only | `error` → HIGH, `warning` → MEDIUM, `note` → LOW | HIGH |
 
 **opengrep needs the confidence tag.** `error` alone covers
@@ -124,6 +124,12 @@ analyser), `Fuzzing` (unobservable here) and `Packaging` (greps
 for known publish commands, so a tag-only action release reads
 as no packaging at all). The list is in `+scorecard`;
 `scorecard_checks` replaces it with locally-answerable names.
+
+**A scorecard `note` is a check that passed** (score 8 or
+better), so it lands at `NOTE` — rank 0, listed in the summary
+and never gated. `LOW  License  README.md  license file
+detected` said nothing was wrong in the column reserved for
+things that are.
 
 A severity outside the known set (Trivy `UNKNOWN`, SARIF
 `none`) is annotated and not gated.
