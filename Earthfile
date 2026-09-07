@@ -87,7 +87,7 @@ opengrep-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.26.0
+    ARG OPENGREP_VERSION=v1.27.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -182,7 +182,7 @@ pip-tools-requirements:
     # renovate: datasource=docker packageName=python
     FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
     # renovate: datasource=pypi packageName=pip-tools
-    ARG PIP_TOOLS_VERSION=7.6.0
+    ARG PIP_TOOLS_VERSION=7.6.1
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
     # --allow-unsafe pins pip and setuptools too: python:3.13-slim no longer
     # ships setuptools, so without it the closure is short a package.
@@ -251,7 +251,7 @@ trivy-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.73.0
+    ARG TRIVY_VERSION=0.74.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
