@@ -66,7 +66,7 @@ runs:
       shell: bash
       run: |
         # renovate: datasource=github-releases packageName=EarthBuild/earthbuild
-        earthbuild_version="v0.8.17"
+        earthbuild_version="v0.8.18"
         curl -fsSL -o /tmp/earth "https://github.com/EarthBuild/earthbuild/releases/download/${earthbuild_version}/earth-linux-amd64"
         echo "85b7f31020be220493c1ef89fe4e976985a72e54dd12b7dfcf17544c8d4fd880  /tmp/earth" | sha256sum -c --strict
         chmod 0755 /tmp/earth
@@ -129,7 +129,7 @@ runs:
         echo "Found $count SARIF file(s)"
 
     - name: Upload SARIF files
-      uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14  #v2.25.0
+      uses: github/codeql-action/upload-sarif@b8d3b6e8af63cde30bdc382c0bc28114f4346c88  # v2.28.1
       if: (success() || failure()) && github.event.repository.private == false
       continue-on-error: true
       with:
