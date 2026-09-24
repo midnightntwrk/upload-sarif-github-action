@@ -7,6 +7,14 @@ VERSION 0.8
 # repo. Defaults to "." (this directory) for self-scans and local dev.
 ARG --global USER_SOURCE_DIR=.
 
+# Update + install retried together, once: a mirror mid-sync fails either
+# step (size mismatch at update, 404 at install), and one failure fails +scan.
+APT_INSTALL:
+    FUNCTION
+    ARG --required PACKAGES
+    RUN i() { apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $PACKAGES; }; \
+        { i || { sleep 15; i; }; } && rm -rf /var/lib/apt/lists/*
+
 user-source:
     LOCALLY
     # Stage via tar so we can exclude scan noise (mirrors .earthlyignore) and
@@ -67,8 +75,7 @@ test:
     # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq git python3 python3-yaml && rm -rf /var/lib/apt/lists/*
+    DO +APT_INSTALL --PACKAGES="jq git python3 python3-yaml"
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
@@ -126,13 +133,7 @@ opengrep:
 scorecard:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    # Retry apt-get update: the Ubuntu mirrors intermittently serve a
-    # mid-sync package index ("File has unexpected size ... Mirror sync in
-    # progress?"), which fails the whole build (exit 100). Acquire::Retries
-    # re-fetches individual files within an attempt; the loop rides out a
-    # mirror-sync window across attempts.
-    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends curl ca-certificates jq git && rm -rf /var/lib/apt/lists/*
+    DO +APT_INSTALL --PACKAGES="curl ca-certificates jq git"
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
@@ -273,9 +274,7 @@ trivy:
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
-    # Retry apt-get update (see the scorecard target) — rides out a mirror sync.
-    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+    DO +APT_INSTALL --PACKAGES="ca-certificates"
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
@@ -327,8 +326,7 @@ gitleaks:
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
-    RUN for i in 1 2 3 4 5; do apt-get -qq -o Acquire::Retries=3 update && break || { echo "apt-get update failed (attempt $i/5), retrying in 15s..."; sleep 15; }; done \
-        && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Use-Pty=0 --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+    DO +APT_INSTALL --PACKAGES="jq"
 
     COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
     RUN chmod 0755 /usr/local/bin/gitleaks

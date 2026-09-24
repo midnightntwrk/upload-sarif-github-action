@@ -96,6 +96,12 @@ and this project adheres to
 
 ### Fixed
 
+- **A mirror mid-sync no longer fails every scanner.** The apt
+  retry loop covered `apt-get update` but not `install`, so a 404
+  on a package the mirror had just superseded failed the `+scan`
+  build outright and no scanner produced SARIF. Update and install
+  now retry together (`APT_INSTALL` in the `Earthfile`).
+
 - **A zero-length SARIF file reported a clean scan.** `jq`
   exits 0 on empty input and prints nothing, so the count
   arithmetic errored to stderr, left the total at zero and the
