@@ -66,9 +66,9 @@ runs:
       shell: bash
       run: |
         # renovate: datasource=github-releases packageName=EarthBuild/earthbuild
-        earthbuild_version="v0.8.17"
+        earthbuild_version="v0.8.19"
         curl -fsSL -o /tmp/earth "https://github.com/EarthBuild/earthbuild/releases/download/${earthbuild_version}/earth-linux-amd64"
-        echo "85b7f31020be220493c1ef89fe4e976985a72e54dd12b7dfcf17544c8d4fd880  /tmp/earth" | sha256sum -c --strict
+        echo "485679af8d21d5a87daaf3780e58ca6e7dd85f7710d6f51da76e17bb28261fd1  /tmp/earth" | sha256sum -c --strict
         chmod 0755 /tmp/earth
 
     - name: Run scanners (parallel)

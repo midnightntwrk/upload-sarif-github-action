@@ -1,0 +1,6 @@
+# ecdsa (pulled in by checkov >= 3.3) - Minerva timing side-channel on P-256
+# signing. Upstream declares it unfixable in pure Python, so no version clears
+# it. Not reachable here: checkov runs in a throwaway scan container that holds
+# no private key and signs nothing, and an attacker would need to time many
+# signatures from that key. Re-check when checkov drops or replaces ecdsa.
+CVE-2024-23342 exp:2026-12-31

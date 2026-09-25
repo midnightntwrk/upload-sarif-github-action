@@ -94,15 +94,15 @@ opengrep-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.26.0
+    ARG OPENGREP_VERSION=v1.30.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="opengrep_manylinux_aarch64"; \
-            HASH="3042a3b1aa98fa93407b9d66a45ab1f179b5b367e76965f56afdbd2c038fb1fa"; \
+            HASH="a5d5a4a58ba5d46ff51e921663da1c2bba38f4b03987f4aeec87f16c6ad3ecae"; \
         else \
             DIST="opengrep_manylinux_x86"; \
-            HASH="40c21299eeddabf743b856daa843d24f9d4a027130671cd45b3b21776fd9ab26"; \
+            HASH="35779bdd72e92129c8df2a77f0c55e8c08356801ea92591ef32108d6b28d564c"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o opengrep \
             "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${DIST}" && \
@@ -183,15 +183,15 @@ pip-tools-requirements:
     # renovate: datasource=docker packageName=python
     FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
     # renovate: datasource=pypi packageName=pip-tools
-    ARG PIP_TOOLS_VERSION=7.6.0
+    ARG PIP_TOOLS_VERSION=7.6.1
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
     # --allow-unsafe pins pip and setuptools too: python:3.13-slim no longer
     # ships setuptools, so without it the closure is short a package.
-    # pip is constrained to the base image's own version rather than resolved:
-    # pip-tools reaches into pip internals and 7.6.0 dies on pip 26.2
-    # (make_requirement_preparer() gained a required allow_editables kwarg).
-    RUN printf 'pip-tools==%s\npip==%s\n' \
-            "${PIP_TOOLS_VERSION}" "$(pip --version | awk '{print $2}')" > /tmp/pip-tools.in && \
+    # pip-tools reaches into pip internals, so a pip bump can break it (7.6.0
+    # died on 26.2: make_requirement_preparer() gained a required
+    # allow_editables kwarg). Bump pip-tools and pip together, then check that
+    # +checkov-requirements still runs.
+    RUN printf 'pip-tools==%s\n' "${PIP_TOOLS_VERSION}" > /tmp/pip-tools.in && \
         pip-compile --generate-hashes --strip-extras --allow-unsafe \
             --output-file=/tmp/pip-tools-requirements.txt /tmp/pip-tools.in
     SAVE ARTIFACT /tmp/pip-tools-requirements.txt AS LOCAL pip-tools-requirements.txt
@@ -204,13 +204,12 @@ checkov-requirements:
     # closure. Regenerate it with +pip-tools-requirements.
     COPY pip-tools-requirements.txt /tmp/pip-tools-requirements.txt
     RUN pip install --no-cache-dir --require-hashes -r /tmp/pip-tools-requirements.txt
-    # Held below 3.2.532, which is where checkov started capping aiohttp at
-    # <3.14.0. Every fix for aiohttp's 14 open CVEs landed in 3.14.x and none
-    # was backported, so accepting that cap pins a security scanner to a dead
-    # dependency line - trivy and scorecard both flag it. Lift the cap when
-    # checkov widens the constraint; +checkov-requirements will then resolve.
+    # Never take 3.2.532-3.3.9: they cap aiohttp at <3.14.0, and every fix for
+    # aiohttp's 14 CVEs landed in 3.14.x only. 3.3.10 widened it to <3.15.0.
+    # asteval is pinned ==1.0.6 by checkov itself, so its bumps (sandbox-escape
+    # GHSAs fixed in 1.0.9) cannot land here until checkov moves that pin.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.2.531
+    ARG CHECKOV_VERSION=3.3.19
     # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
     # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
     RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
@@ -252,15 +251,15 @@ trivy-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.73.0
+    ARG TRIVY_VERSION=0.74.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz"; \
-            HASH="13833d97e8a1a5367471c372a173180157f593bece570e20d5d925fef552f5dd"; \
+            HASH="b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47aad5"; \
         else \
             DIST="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"; \
-            HASH="2edd39da482bb4e9831962487b68f68e3928ec3137794757f54d00383d79547b"; \
+            HASH="2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o trivy.tar.gz \
             "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${DIST}" && \
@@ -365,15 +364,15 @@ zizmor-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
-    ARG ZIZMOR_VERSION=v1.29.0
+    ARG ZIZMOR_VERSION=v1.30.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="zizmor-aarch64-unknown-linux-gnu.tar.gz"; \
-            HASH="415eaa7c0a06479a701b8e44a3e812c1047decc848ec4bede7bd6bbf49f22d20"; \
+            HASH="7ff1dce33bdd18fd2a4affe63bdd47efcccca97b2cec1c1863ec26e9e2647540"; \
         else \
             DIST="zizmor-x86_64-unknown-linux-gnu.tar.gz"; \
-            HASH="dd96df044a6e8538d5f423790f453bdd03d49e5b2bcc38214acc41a2f1297839"; \
+            HASH="e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o zizmor.tar.gz \
             "https://github.com/zizmorcore/zizmor/releases/download/${ZIZMOR_VERSION}/${DIST}" && \
