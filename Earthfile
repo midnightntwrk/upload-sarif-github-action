@@ -183,15 +183,15 @@ pip-tools-requirements:
     # renovate: datasource=docker packageName=python
     FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
     # renovate: datasource=pypi packageName=pip-tools
-    ARG PIP_TOOLS_VERSION=7.6.0
+    ARG PIP_TOOLS_VERSION=7.6.1
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
     # --allow-unsafe pins pip and setuptools too: python:3.13-slim no longer
     # ships setuptools, so without it the closure is short a package.
-    # pip is constrained to the base image's own version rather than resolved:
-    # pip-tools reaches into pip internals and 7.6.0 dies on pip 26.2
-    # (make_requirement_preparer() gained a required allow_editables kwarg).
-    RUN printf 'pip-tools==%s\npip==%s\n' \
-            "${PIP_TOOLS_VERSION}" "$(pip --version | awk '{print $2}')" > /tmp/pip-tools.in && \
+    # pip-tools reaches into pip internals, so a pip bump can break it (7.6.0
+    # died on 26.2: make_requirement_preparer() gained a required
+    # allow_editables kwarg). Bump pip-tools and pip together, then check that
+    # +checkov-requirements still runs.
+    RUN printf 'pip-tools==%s\n' "${PIP_TOOLS_VERSION}" > /tmp/pip-tools.in && \
         pip-compile --generate-hashes --strip-extras --allow-unsafe \
             --output-file=/tmp/pip-tools-requirements.txt /tmp/pip-tools.in
     SAVE ARTIFACT /tmp/pip-tools-requirements.txt AS LOCAL pip-tools-requirements.txt
@@ -204,13 +204,12 @@ checkov-requirements:
     # closure. Regenerate it with +pip-tools-requirements.
     COPY pip-tools-requirements.txt /tmp/pip-tools-requirements.txt
     RUN pip install --no-cache-dir --require-hashes -r /tmp/pip-tools-requirements.txt
-    # Held below 3.2.532, which is where checkov started capping aiohttp at
-    # <3.14.0. Every fix for aiohttp's 14 open CVEs landed in 3.14.x and none
-    # was backported, so accepting that cap pins a security scanner to a dead
-    # dependency line - trivy and scorecard both flag it. Lift the cap when
-    # checkov widens the constraint; +checkov-requirements will then resolve.
+    # Never take 3.2.532-3.3.9: they cap aiohttp at <3.14.0, and every fix for
+    # aiohttp's 14 CVEs landed in 3.14.x only. 3.3.10 widened it to <3.15.0.
+    # asteval is pinned ==1.0.6 by checkov itself, so its bumps (sandbox-escape
+    # GHSAs fixed in 1.0.9) cannot land here until checkov moves that pin.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.2.531
+    ARG CHECKOV_VERSION=3.3.19
     # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
     # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
     RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \

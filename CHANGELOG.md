@@ -11,6 +11,12 @@ and this project adheres to
 
 ### Changed
 
+- **checkov 3.2.531 -> 3.3.19.** 3.3.10 widened the `aiohttp<3.14`
+  cap that had held it back. It adds `ecdsa`, whose Minerva CVE has
+  no fix; `.trivyignore` waives it until 2026-12-31. `asteval` stays
+  at 1.0.6, because checkov pins it exactly
+- **`+checkov-requirements` runs again.** pip 26.2 broke
+  pip-tools 7.6.0; 7.6.1 supports it
 - **A scorecard check that passed is `NOTE`, not `LOW`.** A score
   of 8 or better means the check found nothing wrong, yet
   `LOW  License  README.md  license file detected` sat in the
