@@ -15,6 +15,8 @@ and this project adheres to
   cap that had held it back. It adds `ecdsa`, whose Minerva CVE has
   no fix; `.trivyignore` waives it until 2026-12-31. `asteval` stays
   at 1.0.6, because checkov pins it exactly
+- **opengrep v1.30.0, trivy 0.74.0, zizmor v1.30.1, earthbuild
+  v0.8.19.**
 - **`+checkov-requirements` runs again.** pip 26.2 broke
   pip-tools 7.6.0; 7.6.1 supports it
 - **A scorecard check that passed is `NOTE`, not `LOW`.** A score
