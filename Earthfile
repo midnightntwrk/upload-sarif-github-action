@@ -181,7 +181,7 @@ pip-tools-requirements:
     # committed as pip-tools-requirements.txt, which is what +checkov-requirements
     # actually installs. Maintainer-run; review the diff before committing.
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39
     # renovate: datasource=pypi packageName=pip-tools
     ARG PIP_TOOLS_VERSION=7.6.2
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
@@ -198,7 +198,7 @@ pip-tools-requirements:
 
 checkov-requirements:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39
     # pip-tools needs its own deps (click, build, ...) to run at all, and
     # --require-hashes forbids resolving them on the fly - hence the committed
     # closure. Regenerate it with +pip-tools-requirements.
@@ -218,7 +218,7 @@ checkov-requirements:
 
 checkov:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.13-slim@sha256:57b29a7c050c4e679e4bea572e14b3965cf4b5839de2da49d55e49ffc4024f39
     WORKDIR /src
 
     COPY requirements.txt /tmp/requirements.txt
