@@ -36,6 +36,7 @@ scan:
     ARG SKIP_ZIZMOR_SCAN=false
     ARG SKIP_TRIVY_SCAN=false
     ARG SKIP_GITLEAKS_SCAN=false
+    ARG SKIP_OSV_SCAN=false
     IF [ "$SKIP_OPENGREP_SCAN" != "true" ]
         BUILD +opengrep
     END
@@ -53,6 +54,9 @@ scan:
     END
     IF [ "$SKIP_GITLEAKS_SCAN" != "true" ]
         BUILD +gitleaks
+    END
+    IF [ "$SKIP_OSV_SCAN" != "true" ]
+        BUILD +osv
     END
 
 bats-bin:
@@ -296,6 +300,65 @@ trivy:
     RUN trivy fs --no-progress --scanners vuln --format sarif --output /output/trivy.sarif /src
 
     SAVE ARTIFACT /output/trivy.sarif AS LOCAL scan_reports/trivy.sarif
+
+osv-bin:
+    # Tiny downloader stage; hash check is the trust anchor. The release ships a
+    # bare binary, no tarball.
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+
+    # renovate: datasource=github-releases packageName=google/osv-scanner
+    ARG OSV_SCANNER_VERSION=v2.7.0
+    ARG TARGETARCH
+    WORKDIR /tmp
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            DIST="osv-scanner_linux_arm64"; \
+            HASH="4061ef4c021ed3c47f203b818f337e351336cc5cd67c0274fc36bd1dfc728dd7"; \
+        else \
+            DIST="osv-scanner_linux_amd64"; \
+            HASH="160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b"; \
+        fi && \
+        curl -kfsSL --retry 3 --retry-delay 5 -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/${DIST}" && \
+        echo "${HASH}  osv-scanner" | sha256sum -c
+    SAVE ARTIFACT /tmp/osv-scanner /osv-scanner
+
+osv:
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    # ca-certificates: osv-scanner (Go) queries api.osv.dev over TLS at scan time.
+    DO +APT_INSTALL --PACKAGES="ca-certificates jq"
+    WORKDIR /src
+
+    COPY +osv-bin/osv-scanner /usr/local/bin/osv-scanner
+    RUN chmod 0755 /usr/local/bin/osv-scanner
+
+    RUN useradd -m -r -s /usr/sbin/nologin scanner
+    COPY +user-source/src /src
+    COPY scripts/osv.jq /scripts/osv.jq
+    RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
+    USER scanner
+
+    # Overlaps trivy on CVEs (different advisory sources); the reason it is here
+    # is OSV's MAL-* malicious-packages feed, which trivy does not carry.
+    #
+    # --no-call-analysis=all: rust call analysis runs the scanned repo's build
+    # scripts, i.e. untrusted code. Off explicitly, not by default.
+    # --no-resolve: otherwise a bare `requests==2.32.5` has its transitive deps
+    # guessed via deps.dev at scan time - not what pip installs, and not stable
+    # run to run (it flagged a stale certifi the repo never pinned). Only what
+    # the repo actually pins is scanned.
+    # --allow-no-lockfiles: otherwise a repo with no manifests exits 128 and
+    # writes no SARIF. Exit 1 = vulnerabilities found (gated downstream); any
+    # other non-zero is a real error. A repo's osv-scanner.toml is honoured.
+    RUN osv-scanner scan source -r --allow-no-lockfiles --no-resolve --no-call-analysis=all \
+            --format sarif --output-file /output/osv-raw.sarif . ; \
+        rc=$?; [ $rc -le 1 ] || exit $rc
+
+    # Malware is CRITICAL, CVEs banded by CVSS - see scripts/osv.jq.
+    RUN jq -f /scripts/osv.jq /output/osv-raw.sarif > /output/osv-scanner.sarif
+
+    SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif
 
 gitleaks-bin:
     # Tiny downloader stage; hash check is the trust anchor.

@@ -53,6 +53,15 @@ plant_defects() {
     # trivy: a pin with known CVEs, several of them CRITICAL.
     printf 'django==1.11.0\n' > "$d/requirements.txt"
 
+    # osv-scanner: a lockfile naming flatmap-stream@0.1.1, the 2018 event-stream
+    # wallet stealer (MAL-2025-20690). Only the name is planted - nothing is
+    # fetched, and npm now serves a 0.0.1-security placeholder in its place.
+    # `resolved` is load-bearing: without it osv-scanner counts the package but
+    # matches nothing against it.
+    mkdir -p "$d/js"
+    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"}}}' \
+        > "$d/js/package-lock.json"
+
     # gitleaks: the PEM markers are assembled from parts so this file does not
     # itself contain the literal the scanner matches on.
     {
@@ -132,10 +141,10 @@ if [ "$(scan "$work/dirty" dirty)" = ERR ]; then
 fi
 
 produced="$(find "$work/reports-dirty" -name '*.sarif' | wc -l | tr -d ' ')"
-if [ "$produced" -eq 6 ]; then
-    ok "all six scanners produced a report"
+if [ "$produced" -eq 7 ]; then
+    ok "all seven scanners produced a report"
 else
-    no "expected 6 SARIF files, got $produced" \
+    no "expected 7 SARIF files, got $produced" \
        "$(find "$work/reports-dirty" -name '*.sarif' -exec basename {} \; | tr '\n' ' ')"
 fi
 
@@ -163,6 +172,7 @@ opengrep |opengrep.sarif          |run-shell-injection    |CRITICAL
 zizmor   |zizmor.sarif            |template-injection     |CRITICAL
 checkov  |checkov.sarif           |CKV_AWS_20             |HIGH
 scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
+osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
 EXPECTED
 
 # The calibration is policy, and policy that only exists in jq drifts. These
@@ -225,10 +235,10 @@ if [ "$(scan "$work/clean" clean)" = ERR ]; then
     no "the clean scan failed" "$(tail -5 "$work/earth-clean.log" | tr '\n' '|')"
 else
     produced="$(find "$work/reports-clean" -name '*.sarif' | wc -l | tr -d ' ')"
-    if [ "$produced" -eq 6 ]; then
-        ok "all six scanners still reported on a clean tree"
+    if [ "$produced" -eq 7 ]; then
+        ok "all seven scanners still reported on a clean tree"
     else
-        no "expected 6 SARIF files on the clean tree, got $produced"
+        no "expected 7 SARIF files on the clean tree, got $produced"
     fi
 
     rc="$(gate clean critical)"

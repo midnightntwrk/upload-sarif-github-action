@@ -1,0 +1,7 @@
+# Mirrors .trivyignore: one waiver, two scanners. Aliases (PYSEC-2026-1325,
+# GHSA-wj6h-64fc-37mp) are ignored with it.
+
+[[IgnoredVulns]]
+id = "CVE-2024-23342"
+ignoreUntil = 2026-12-31
+reason = "ecdsa (pulled in by checkov >= 3.3) - Minerva timing side-channel on P-256 signing, declared unfixable in pure Python. Not reachable: checkov runs in a throwaway scan container that holds no private key and signs nothing. Re-check when checkov drops or replaces ecdsa."

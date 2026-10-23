@@ -9,6 +9,18 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **osv-scanner v2.7.0 runs as a seventh scanner.** It overlaps
+  trivy on CVEs, but its reason to be here is OSV's `MAL-*`
+  malicious-packages feed, which trivy does not carry: a
+  lockfile naming a known-malicious package now fails at every
+  `fail_severity`, like a committed secret. CVEs are banded by
+  CVSS. Rust call analysis stays off because it runs the
+  scanned repo's build scripts. A repo's `osv-scanner.toml` is
+  honoured, the same file scorecard's `Vulnerabilities` check
+  already reads. Skip it with `skip_osv_scan: true`
+
 ### Changed
 
 - **opengrep v1.32.0, trivy 0.76.1, zizmor v1.31.1, scorecard
