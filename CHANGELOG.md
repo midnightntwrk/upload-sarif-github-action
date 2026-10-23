@@ -11,6 +11,14 @@ and this project adheres to
 
 ### Changed
 
+- **opengrep v1.32.0, trivy 0.76.1, zizmor v1.31.1, scorecard
+  5.6.0, checkov 3.3.30, pip-tools 7.6.2, codeql-action v4.39.1,
+  upload-artifact v7.0.2.** Each binary checked against its
+  upstream signature (cosign / SLSA / GitHub attestation) before
+  its hash was pinned. The re-resolved lock clears certifi
+  GHSA-6q48-6c7w-9gw2, gitpython CVE-2026-114145 and the aiohttp
+  3.14.4 fixes. Renovate's `checkov<3.2.532` hold is gone; 3.3.10
+  already lifted the cap it was there for
 - **checkov 3.2.531 -> 3.3.19.** 3.3.10 widened the `aiohttp<3.14`
   cap that had held it back. It adds `ecdsa`, whose Minerva CVE has
   no fix; `.trivyignore` waives it until 2026-12-31. `asteval` stays

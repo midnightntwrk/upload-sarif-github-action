@@ -129,7 +129,7 @@ runs:
         echo "Found $count SARIF file(s)"
 
     - name: Upload SARIF files
-      uses: github/codeql-action/upload-sarif@3d8036cf7fe7433e4a725cf513a6ea56c7fd0f14  #v2.25.0
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
       if: (success() || failure()) && github.event.repository.private == false
       continue-on-error: true
       with:
@@ -138,7 +138,7 @@ runs:
     # Upload SARIF artifacts for private repositories
     - name: Upload SARIF artifacts
       if: (success() || failure()) && github.event.repository.private == true
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
       with:
         name: sarif_reports
         path: scan_reports

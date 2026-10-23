@@ -50,15 +50,6 @@
       enabled: false,
     },
     {
-      // checkov 3.2.532 added `aiohttp<3.14.0`. Every fix for aiohttp's 14 open
-      // CVEs is in 3.14.x with no backport, so taking that cap regresses this
-      // repo's own scan. Delete this rule once checkov widens the constraint -
-      // it shows up on the Dependency Dashboard as blocked, not as silence.
-      description: 'Hold checkov below the release that caps aiohttp',
-      matchPackageNames: ['checkov'],
-      allowedVersions: '<3.2.532',
-    },
-    {
       // requirements.txt is pip-compile output. In-place bumps can produce a
       // lock that violates checkov's own constraints (this is how aiohttp
       // 3.14.3 ended up pinned under a checkov that caps it at <3.14).
