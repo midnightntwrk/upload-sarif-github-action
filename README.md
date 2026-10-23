@@ -131,12 +131,11 @@ and never gated. `LOW  License  README.md  license file
 detected` said nothing was wrong in the column reserved for
 things that are.
 
-**A scorecard check with nothing wrong is not reported at
-all.** Seven exact passes at 10/10 (`no binaries found in the
-repo`, `0 existing vulnerabilities detected`, ...; the table is
-`quiet` in `scripts/scorecard.jq`) produce no row. Anything else
-that passes - a 9/10, another check, a reason scorecard has
-reworded - still lands at `NOTE`.
+**A scorecard check that scores 10 is not reported at all**
+(`no binaries found in the repo`, `0 existing vulnerabilities
+detected`, ...): nothing is wrong, so there is nothing to say.
+8 or 9 still lands at `NOTE`, and an inconclusive check (-1) is
+still reported.
 
 A severity outside the known set (Trivy `UNKNOWN`, SARIF
 `none`) is annotated and not gated.

@@ -2,11 +2,10 @@
 #
 # scripts/scorecard.jq: Scorecard JSON to SARIF, and which passes it keeps quiet.
 #
-# A check that found nothing wrong is not a finding, so it is not reported. That
-# is decided by exact (check, reason) pairs at a perfect score, never by score
-# alone: 8/10 still means something was wrong, and a reworded reason after a
-# scorecard upgrade must reappear rather than vanish. tests/canary.sh holds the
-# pairs against the real binary.
+# A check that scores a perfect 10 found nothing wrong, so it is not a finding
+# and is not reported - the `minScore: 10` rule of scorecard's own policy file,
+# without that path's experimental SARIF, which drops levels and hides
+# inconclusive results too. Anything below 10 still has something wrong.
 
 load helper
 
@@ -22,41 +21,26 @@ results() {
     jq -r -f "$SCORECARD_JQ" "$TMP/in.json" | jq -r '[.runs[].results[].ruleId] | join(",")'
 }
 
-@test "the seven perfect passes are not reported" {
-    while IFS='|' read -r name reason; do
-        [ "$(results "$name" 10 "$reason")" = "" ] || {
-            echo "still reported: $name - $reason"; return 1; }
-    done <<'PASSES'
-Binary-Artifacts|no binaries found in the repo
-Dangerous-Workflow|no dangerous workflow patterns detected
-Dependency-Update-Tool|update tool detected
-Pinned-Dependencies|all dependencies are pinned
-Security-Policy|security policy file detected
-Token-Permissions|GitHub workflow tokens follow principle of least privilege
-Vulnerabilities|0 existing vulnerabilities detected
-PASSES
+@test "a perfect score is not reported, whatever the reason says" {
+    [ "$(results Binary-Artifacts 10 'no binaries found in the repo')" = "" ]
+    [ "$(results Vulnerabilities 10 '0 existing vulnerabilities detected')" = "" ]
+    [ "$(results License 10 'license file detected')" = "" ]
 }
 
 # Security-Policy says "detected" at any score: a file that is present but
 # lacks disclosure details scores below 10 under the same reason.
-@test "a quiet reason below a perfect score is still reported" {
-    [ "$(results Security-Policy 4 'security policy file detected')" = Security-Policy ]
+@test "nine out of ten is still reported" {
+    [ "$(results Security-Policy 9 'security policy file detected')" = Security-Policy ]
 }
 
-@test "a pass that scorecard reworded is still reported" {
-    [ "$(results Binary-Artifacts 10 'no binaries detected')" = Binary-Artifacts ]
-}
-
-@test "a reason is matched to its own check only" {
-    [ "$(results Token-Permissions 10 'no binaries found in the repo')" = Token-Permissions ]
-}
-
-@test "a perfect pass of a check not on the list is still reported" {
-    [ "$(results License 10 'license file detected')" = License ]
-}
-
-@test "vulnerabilities found are reported" {
+@test "a failing check is reported" {
     [ "$(results Vulnerabilities 7 '3 existing vulnerabilities detected')" = Vulnerabilities ]
+}
+
+# -1 is scorecard's "inconclusive" - nothing to score. Not a pass, so not
+# silenced (scorecard's own policy filter would skip it).
+@test "an inconclusive check is still reported" {
+    [ "$(results Dangerous-Workflow -1 'no workflows found')" = Dangerous-Workflow ]
 }
 
 @test "a quiet check still has its rule, so the Security tab can close it" {

@@ -108,8 +108,8 @@ og() {
 # scorecard.jq emits `note` for a score of 8 or better - the check passed.
 # "LOW  License  README.md  license file detected" is a pass rendered as a
 # finding, and a reader cannot tell it from something to fix. NOTE ranks 0, so
-# it is listed, never gated. (Seven exact perfect passes are not emitted at
-# all - see tests/scorecard.bats.)
+# it is listed, never gated. (A perfect 10 is not emitted at all - see
+# tests/scorecard.bats.)
 @test "scorecard note is NOTE - a passing check is not a finding" {
     [ "$(sev scorecard '{"runs":[{"tool":{"driver":{"name":"ossf-scorecard"}},
       "results":[{"ruleId":"License","level":"note"}]}]}')" = NOTE ]

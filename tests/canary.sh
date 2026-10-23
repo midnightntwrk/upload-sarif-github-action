@@ -218,9 +218,8 @@ fi
 # above, and so does a gate wired to fail unconditionally.
 echo "== a clean tree is not blocked =="
 
-# Clean enough for scorecard's seven quiet passes to score 10, so the assertion
-# below holds scripts/scorecard.jq's exact reason strings against the real
-# binary. No dependency manifest: any pin can gain an advisory later, which
+# Clean enough to score 10 on seven scorecard checks, so the assertion below
+# holds scripts/scorecard.jq's perfect-score filter against the real binary. No dependency manifest: any pin can gain an advisory later, which
 # would turn Vulnerabilities into a flake.
 mkdir -p "$work/clean/.github/workflows"
 printf 'nothing to see here\n' > "$work/clean/README.md"
@@ -251,18 +250,17 @@ else
            "$(grep -E '^  ' "$work/gate-clean-critical.log" | head -3 | tr '\n' '|')"
     fi
 
-    # A pass that reappears here means scorecard reworded it (update the
-    # `quiet` table in scripts/scorecard.jq to the new text) or this tree
-    # stopped scoring 10.
+    # One reappearing here means this tree stopped scoring 10 on it (the
+    # reason says why), or scorecard.jq stopped dropping perfect scores.
     loud="$(jq -r '.runs[].results[]
         | select(.ruleId | IN("Binary-Artifacts", "Dangerous-Workflow",
             "Dependency-Update-Tool", "Pinned-Dependencies", "Security-Policy",
             "Token-Permissions", "Vulnerabilities"))
         | "\(.ruleId): \(.message.text)"' "$work/reports-clean/scorecard-results.sarif")"
     if [ -z "$loud" ]; then
-        ok "scorecard reports none of its seven passes"
+        ok "scorecard reports none of its seven perfect scores"
     else
-        no "scorecard reported a pass" "$(printf '%s' "$loud" | tr '\n' '|')"
+        no "scorecard reported a perfect score" "$(printf '%s' "$loud" | tr '\n' '|')"
     fi
 fi
 
