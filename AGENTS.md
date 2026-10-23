@@ -55,6 +55,11 @@ test in `tests/calibration.bats` or the tool's own `.bats`.
 - Run scanners in their own target as the non-root `scanner` user. Never
   enable a mode that executes the scanned repo's code (osv-scanner
   `--call-analysis` runs Rust build scripts).
+- No apt in scanner images: copy the CA bundle from `+ca-certs` and jq from
+  `+jq-bin`. apt installs whatever the mirror serves that day.
+- One credential enters the scan: `GH_TOKEN`, as an earth `--secret`, read by
+  `+zizmor` alone. Never as an ARG (it would land in a layer), never to
+  another target. zizmor online has no off switch by design.
 - Probe the real SARIF first: severity signal, URIs (`file:///src/...` must
   become repo-relative), exit codes (most use 1 for "found something").
 - `tests/canary.sh` plants one defect per scanner and asserts each is caught

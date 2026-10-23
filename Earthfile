@@ -15,6 +15,42 @@ APT_INSTALL:
     RUN i() { apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $PACKAGES; }; \
         { i || { sleep 15; i; }; } && rm -rf /var/lib/apt/lists/*
 
+# Scanner images install nothing from apt: an apt install is whatever the
+# mirror serves that day - unpinned, so not reproducible - and it was the
+# slowest step in most targets (41s of scorecard's 53s on a CI runner). What
+# they needed from it comes from pinned sources instead.
+
+# The CA bundle from the digest-pinned curl image: Renovate bumps that digest,
+# so the bundle refreshes with it. Go binaries (trivy, osv-scanner, scorecard)
+# read this path for TLS.
+ca-certs:
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    SAVE ARTIFACT /etc/ssl/certs/ca-certificates.crt
+
+# Static jq, the same binary in every scanner image and in +test, so the
+# severity ladder is tested on the jq that ships. 1.8.x carries GitHub build
+# attestations (ci.yml at the release tag); 1.7.1 did not.
+jq-bin:
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    # renovate: datasource=github-releases packageName=jqlang/jq extractVersion=^jq-(?<version>.+)$
+    ARG JQ_VERSION=1.8.2
+    ARG TARGETARCH
+    WORKDIR /tmp
+    RUN if [ "$TARGETARCH" = "arm64" ]; then \
+            DIST="jq-linux-arm64"; \
+            HASH="8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309"; \
+        else \
+            DIST="jq-linux-amd64"; \
+            HASH="b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f"; \
+        fi && \
+        curl -fsSL --retry 3 --retry-delay 5 -o jq \
+            "https://github.com/jqlang/jq/releases/download/jq-${JQ_VERSION}/${DIST}" && \
+        echo "${HASH}  jq" | sha256sum -c && \
+        chmod 0755 jq
+    SAVE ARTIFACT /tmp/jq /jq
+
 user-source:
     LOCALLY
     # Stage via tar so we can exclude scan noise (mirrors .earthlyignore) and
@@ -79,7 +115,8 @@ test:
     # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    DO +APT_INSTALL --PACKAGES="jq git python3 python3-yaml"
+    DO +APT_INSTALL --PACKAGES="git python3 python3-yaml"
+    COPY +jq-bin/jq /usr/local/bin/jq
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
     COPY scripts /work/scripts
@@ -134,22 +171,14 @@ opengrep:
 
     SAVE ARTIFACT /output/opengrep.sarif AS LOCAL scan_reports/opengrep.sarif
 
-scorecard:
-    # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    DO +APT_INSTALL --PACKAGES="curl ca-certificates jq git"
-    WORKDIR /src
-
+scorecard-bin:
+    # Tiny downloader stage; hash check is the trust anchor.
+    # renovate: datasource=docker packageName=curlimages/curl
+    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
     # renovate: datasource=github-releases packageName=ossf/scorecard
     ARG SCORECARD_VERSION=5.6.0
-    ARG SCORECARD_CHECKS
-    # `--checks` is an allowlist with no exclude counterpart, so declining one
-    # means naming the rest. Everything scorecard answers from --local, less
-    # SAST (this action is the analyser), Fuzzing (unobservable) and Packaging
-    # (greps for known publish commands; a tag-only action release reads as a
-    # miss). A check added upstream is opt-in. Named in the README too.
-    ARG DEFAULT_CHECKS="Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,License,Pinned-Dependencies,Security-Policy,Token-Permissions,Vulnerabilities"
     ARG TARGETARCH
+    WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
             HASH="3eacaceb3fdee6d0ba5df6ede45d1ada73321949029921bb63633802e8ec5951"; \
@@ -157,12 +186,30 @@ scorecard:
             ARCH="amd64"; \
             HASH="19bde07129450cb65a95c6e3b9f34e034341579e6f0e241546ec3ae6efb2dd9a"; \
         fi && \
-        curl -fsSL --retry 3 --retry-delay 5 -o /tmp/scorecard.tar.gz \
+        curl -fsSL --retry 3 --retry-delay 5 -o scorecard.tar.gz \
             "https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_${ARCH}.tar.gz" && \
-        echo "${HASH}  /tmp/scorecard.tar.gz" | sha256sum -c --strict && \
-        tar -xf /tmp/scorecard.tar.gz -C /usr/local/bin scorecard && \
-        chmod 0755 /usr/local/bin/scorecard && \
-        rm /tmp/scorecard.tar.gz
+        echo "${HASH}  scorecard.tar.gz" | sha256sum -c && \
+        tar -xf scorecard.tar.gz scorecard && \
+        rm scorecard.tar.gz
+    SAVE ARTIFACT /tmp/scorecard /scorecard
+
+scorecard:
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    # CA bundle: the Vulnerabilities check queries api.osv.dev.
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+    COPY +jq-bin/jq /usr/local/bin/jq
+    COPY +scorecard-bin/scorecard /usr/local/bin/scorecard
+    RUN chmod 0755 /usr/local/bin/scorecard
+    WORKDIR /src
+
+    ARG SCORECARD_CHECKS
+    # `--checks` is an allowlist with no exclude counterpart, so declining one
+    # means naming the rest. Everything scorecard answers from --local, less
+    # SAST (this action is the analyser), Fuzzing (unobservable) and Packaging
+    # (greps for known publish commands; a tag-only action release reads as a
+    # miss). A check added upstream is opt-in. Named in the README too.
+    ARG DEFAULT_CHECKS="Binary-Artifacts,Dangerous-Workflow,Dependency-Update-Tool,License,Pinned-Dependencies,Security-Policy,Token-Permissions,Vulnerabilities"
 
     RUN useradd -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
@@ -275,9 +322,8 @@ trivy-bin:
 trivy:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    # ca-certificates: trivy (Go) uses the system cert pool for TLS to
-    # ghcr.io when fetching the vulnerability DB at scan time.
-    DO +APT_INSTALL --PACKAGES="ca-certificates"
+    # CA bundle: trivy fetches its vulnerability DB over TLS at scan time.
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
     WORKDIR /src
 
     COPY +trivy-bin/trivy /usr/local/bin/trivy
@@ -326,8 +372,9 @@ osv-bin:
 osv:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    # ca-certificates: osv-scanner (Go) queries api.osv.dev over TLS at scan time.
-    DO +APT_INSTALL --PACKAGES="ca-certificates jq"
+    # CA bundle: osv-scanner queries api.osv.dev over TLS at scan time.
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+    COPY +jq-bin/jq /usr/local/bin/jq
     WORKDIR /src
 
     COPY +osv-bin/osv-scanner /usr/local/bin/osv-scanner
@@ -388,7 +435,7 @@ gitleaks:
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
-    DO +APT_INSTALL --PACKAGES="jq"
+    COPY +jq-bin/jq /usr/local/bin/jq
 
     COPY +gitleaks-bin/gitleaks /usr/local/bin/gitleaks
     RUN chmod 0755 /usr/local/bin/gitleaks
@@ -449,6 +496,9 @@ zizmor:
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
     WORKDIR /src
 
+    # CA bundle: online audits call api.github.com. Without it zizmor does not
+    # error, it panics with a crash report and no message.
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
     COPY +zizmor-bin/zizmor /usr/local/bin/zizmor
     RUN chmod 0755 /usr/local/bin/zizmor
 
@@ -457,13 +507,24 @@ zizmor:
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
 
-    # Offline mode: keeps scanner off the runner's GITHUB_TOKEN.
+    # Online, always. known-vulnerable-actions, impostor-commit and
+    # ref-confusion need the GitHub API, and nothing else here checks the
+    # actions a workflow `uses:` - tj-actions/changed-files@v35 passes every
+    # other scanner. The token is a secret, not an ARG: it reaches this RUN
+    # only, is in no layer, and no other scanner sees it. A missing token is
+    # an error, not a quiet --offline: that fallback is an opt-out nobody chose.
     # --format=sarif suppresses zizmor's finding-severity exit codes (11+),
     # so non-zero indicates a real error.
     # Empty-SARIF fallback covers repos with no workflows/composite action.
-    RUN set -e; \
+    RUN --secret GH_TOKEN set -e; \
         if [ -d /src/.github/workflows ] || [ -f /src/action.yml ] || [ -f /src/action.yaml ] || [ -f /src/.github/dependabot.yml ] || [ -f /src/.github/dependabot.yaml ]; then \
-            zizmor --offline --format=sarif /src > /output/zizmor.sarif; \
+            if [ -z "${GH_TOKEN:-}" ]; then \
+                echo "error: zizmor runs online and needs a GitHub token, but GH_TOKEN is empty." >&2; \
+                echo "  In the action it is inputs.github_token, else github.token." >&2; \
+                echo "  Locally: GH_TOKEN=\"\$(gh auth token)\" earth --secret GH_TOKEN +scan" >&2; \
+                exit 2; \
+            fi; \
+            zizmor --format=sarif /src > /output/zizmor.sarif; \
         else \
             echo "No GitHub workflows, composite action or dependabot config found — emitting empty SARIF"; \
             printf '%s' '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"zizmor","informationUri":"https://github.com/zizmorcore/zizmor"}},"results":[]}]}' > /output/zizmor.sarif; \

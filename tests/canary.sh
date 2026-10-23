@@ -40,6 +40,13 @@ no() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1"; [ -n "${2:-}" ] && printf 
 
 command -v earth > /dev/null 2>&1 || { echo "SKIP: earth not on PATH"; exit 0; }
 docker info > /dev/null 2>&1 || { echo "SKIP: docker unavailable"; exit 0; }
+# zizmor runs online and refuses to run without a token. CI sets GH_TOKEN; a
+# developer usually has gh logged in.
+if [ -z "${GH_TOKEN:-}" ] && command -v gh > /dev/null 2>&1; then
+    GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+fi
+[ -n "${GH_TOKEN:-}" ] || { echo "SKIP: no GH_TOKEN and no gh login - zizmor runs online"; exit 0; }
+export GH_TOKEN
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work" "$ROOT/scan_reports"' EXIT
@@ -76,6 +83,9 @@ plant_defects() {
         printf 'on: pull_request_target\n'
         printf 'jobs:\n  bad:\n    runs-on: ubuntu-latest\n    steps:\n'
         printf '      - uses: actions/checkout@v4\n'
+        # zizmor online: the March 2025 tj-actions compromise, GHSA-mrrh-fwg8-r2c3.
+        # Named only - nothing runs this workflow.
+        printf '      - uses: tj-actions/changed-files@v35\n'
         # Single quotes are the point: the expression must reach the workflow
         # file unexpanded, because it is the defect the scanners look for.
         # shellcheck disable=SC2016
@@ -117,10 +127,18 @@ scan() {
     # the staged tree is not part of the scanner targets' cache key and a second
     # scan in the same run is served the first one's SARIF. Without it the clean
     # control would be handed the dirty tree's findings.
-    (cd "$ROOT" && earth --no-cache ./+scan --USER_SOURCE_DIR="$1") \
+    (cd "$ROOT" && earth --no-cache --secret GH_TOKEN ./+scan --USER_SOURCE_DIR="$1") \
         > "$work/earth-$2.log" 2>&1 || { printf ERR; return; }
     [ -d "$ROOT/scan_reports" ] && cp -r "$ROOT/scan_reports/." "$reports/"
     printf OK
+}
+
+# root_cause <log> -- the target that actually failed, not the tail. When one
+# scanner fails, earth cancels the other six, so the last lines are always a
+# victim ("context canceled") and never the cause.
+root_cause() {
+    awk '/ERROR Earthfile/ { p = 1 } p && n < 8 { print; n++ }' "$1" \
+        | grep -v 'context canceled' | tr -s ' ' | tr '\n' '|'
 }
 
 # gate <label> <threshold> -- the gate's exit code over that scan's reports.
@@ -149,7 +167,7 @@ echo "== every scanner is still finding things =="
 mkdir -p "$work/dirty"
 plant_defects "$work/dirty"
 if [ "$(scan "$work/dirty" dirty)" = ERR ]; then
-    no "the scan itself failed" "$(tail -5 "$work/earth-dirty.log" | tr '\n' '|')"
+    no "the scan itself failed" "$(root_cause "$work/earth-dirty.log")"
     printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
     exit 1
 fi
@@ -184,6 +202,7 @@ gitleaks |gitleaks.sarif          |private-key            |CRITICAL
 trivy    |trivy.sarif             |requirements\.txt      |CRITICAL
 opengrep |opengrep.sarif          |run-shell-injection    |CRITICAL
 zizmor   |zizmor.sarif            |template-injection     |CRITICAL
+zizmor   |zizmor.sarif            |known-vulnerable-actions|CRITICAL
 checkov  |checkov.sarif           |CKV_AWS_20             |HIGH
 scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
 osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
@@ -279,7 +298,7 @@ printf 'version: 2\nupdates:\n  - package-ecosystem: github-actions\n    directo
     printf '        with:\n          persist-credentials: false\n'
 } > "$work/clean/.github/workflows/ci.yml"
 if [ "$(scan "$work/clean" clean)" = ERR ]; then
-    no "the clean scan failed" "$(tail -5 "$work/earth-clean.log" | tr '\n' '|')"
+    no "the clean scan failed" "$(root_cause "$work/earth-clean.log")"
 else
     produced="$(find "$work/reports-clean" -name '*.sarif' | wc -l | tr -d ' ')"
     if [ "$produced" -eq 7 ]; then

@@ -59,6 +59,9 @@ jobs:
       # exactly like a clean repository - every other test here passes happily
       # against a dead scanner. Two full scans, so it is the slowest step.
       - name: Canary (every scanner still finds things)
+        env:
+          # zizmor runs online; public API reads only.
+          GH_TOKEN: ${{ github.token }}
         run: ./tests/canary.sh
 
   scan:
