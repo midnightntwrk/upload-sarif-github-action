@@ -206,8 +206,9 @@ checkov can find a comment in — Dockerfile, YAML, HCL:
 # checkov:skip=CKV_DOCKER_2:healthcheck lives in the compose file
 ```
 
-JSON has no comment syntax, which is why the `.checkov.yml`
-above has to be honoured at all.
+Reported, marked suppressed, and listed rather than counted -
+the same as `# nosemgrep`. JSON has no comment syntax, which is
+why the `.checkov.yml` above has to be honoured at all.
 
 ### trivy — `.trivyignore`
 
@@ -259,7 +260,11 @@ instead — it is an allowlist, so name the ones you keep.
 token = load(path)  # nosemgrep: python.lang.security.audit.hardcoded-password
 ```
 
-Bare `# nosemgrep` (or `# nosem`) suppresses every rule on the
+The finding is still reported, marked suppressed: the gate
+skips it and the job summary lists it under "suppressed in
+source", so a reviewer sees what the comments excuse. Prefer
+the rule id, and say why in the same comment. Bare `# nosemgrep`
+(or `# nosem`) suppresses every rule on the
 line; ids after `:` or `=`, comma-separated, suppress only
 those. A comment on the line directly above works too, for
 languages where a trailing comment will not parse.

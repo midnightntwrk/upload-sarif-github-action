@@ -21,6 +21,16 @@ and this project adheres to
   honoured, the same file scorecard's `Vulnerabilities` check
   already reads. Skip it with `skip_osv_scan: true`
 
+### Fixed
+
+- **`# nosemgrep` and `# checkov:skip=` now clear the gate.** Both
+  scanners report a suppressed finding anyway, marked
+  `suppressions: inSource` as SARIF asks; GitHub's Security tab
+  honoured the mark and the gate did not, so the documented way to
+  clear a false positive left the build red on every repo. Honoured
+  per SARIF 3.35.3 (`rejected` and `underReview` still count), listed
+  in the job summary rather than hidden, never for a gitleaks secret
+
 ### Changed
 
 - **opengrep v1.32.0, trivy 0.76.1, zizmor v1.31.1, scorecard

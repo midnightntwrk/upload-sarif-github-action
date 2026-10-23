@@ -282,3 +282,17 @@ summary() {
     [ "$(printf '%s\n' "$output" | grep -c '^- `noisy`')" -le 50 ]
     [[ "$output" == *"of 500"* ]]
 }
+
+# Suppressed in source is not counted, but it is not nothing either: a reviewer
+# should be able to see what the comments are excusing.
+@test "suppressed findings get their own fold, named, not counted" {
+    mkdir -p "$TMP/r"
+    printf '%s\n' '{"runs":[{"tool":{"driver":{"name":"checkov"}},"results":[
+      {"ruleId":"CKV_AWS_20","level":"error","suppressions":[{"kind":"inSource"}],
+       "locations":[{"physicalLocation":{"artifactLocation":{"uri":"main.tf"},"region":{"startLine":2}}}]}]}]}' \
+        > "$TMP/r/checkov.sarif"
+    summary "$TMP/r" high
+    [[ "$output" == *"1 finding(s) suppressed in source"* ]]
+    [[ "$output" == *'`checkov` CKV_AWS_20  main.tf:2'* ]]
+    [[ "$output" != *"at or above HIGH"*"CKV_AWS_20"*"| HIGH"* ]]
+}

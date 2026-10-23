@@ -88,6 +88,20 @@ plant_defects() {
         printf '  bucket = "canary"\n  acl    = "public-read"\n}\n'
     } > "$d/main.tf"
 
+    # Suppressed in source: each defect a scanner above catches, excused by the
+    # scanner's own comment. Both are reported with `suppressions: inSource`
+    # and must reach the gate as named-but-not-counted.
+    {
+        printf 'import sys\n'
+        printf '# nosemgrep: python.lang.security.audit.eval-detected.eval-detected\n'
+        printf 'eval(sys.argv[1])\n'
+    } > "$d/suppressed.py"
+    {
+        printf 'resource "aws_s3_bucket" "s" {\n'
+        printf '  # checkov:skip=CKV_AWS_20:canary - suppressed on purpose\n'
+        printf '  bucket = "canary-skipped"\n  acl    = "public-read"\n}\n'
+    } > "$d/suppressed.tf"
+
     # scorecard reads the tree as a whole: no LICENSE plus the workflow above is
     # enough for Dangerous-Workflow to fail.
     printf 'canary\n' > "$d/README.md"
@@ -203,6 +217,28 @@ for gone in SAST Fuzzing Packaging; do
         ok "scorecard $gone is not reported at all"
     else
         no "scorecard still reports $gone"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Raw scanner output, not hand-written SARIF: the mark has to survive each
+# tool's real report, and the gate has to read it.
+echo "== in-source suppressions are honoured =="
+
+# By rule as well as file: the skip names one check, and checkov's other rules
+# on the same bucket (versioning, logging, ...) are rightly still counted.
+for triple in "opengrep.sarif|suppressed.py|eval-detected" "checkov.sarif|suppressed.tf|CKV_AWS_20"; do
+    IFS='|' read -r report file rule <<< "$triple"
+    out="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 \
+        "$work/reports-dirty/$report")"
+    named="$(jq -r --arg f "$file" --arg r "$rule" \
+        '[.suppressions[] | select(contains($f) and contains($r))] | length' <<< "$out")"
+    counted="$(jq -r --arg f "$file" --arg r "$rule" \
+        '[.hits[] | select(.file == $f and (.rule | contains($r)))] | length' <<< "$out")"
+    if [ "$named" -ge 1 ] && [ "$counted" = 0 ]; then
+        ok "$report: $rule in $file is suppressed - named, not counted"
+    else
+        no "$report: $rule in $file named=$named counted=$counted" "expected named>=1 counted=0"
     fi
 done
 
