@@ -4,8 +4,9 @@ permissions: {}
 on:
   push:
     branches: [main]
+  # Every base branch, not just main: a PR stacked on another PR otherwise gets
+  # no CI at all, and the only check that reports is DCO.
   pull_request:
-    branches: [main]
   workflow_dispatch: {}   # so you can still run it manually
   schedule:
     - cron: "0 0 * * *"   # run daily at midnight UTC
@@ -59,6 +60,9 @@ jobs:
       # exactly like a clean repository - every other test here passes happily
       # against a dead scanner. Two full scans, so it is the slowest step.
       - name: Canary (every scanner still finds things)
+        env:
+          # zizmor runs online; public API reads only.
+          GH_TOKEN: ${{ github.token }}
         run: ./tests/canary.sh
 
   scan:

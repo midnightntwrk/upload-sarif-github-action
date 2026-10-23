@@ -12,7 +12,9 @@ repos).
 - **Trivy** - Vulnerability scan (hash-pinned binary, not the GitHub action)
 - **[gitleaks]** - Secret scanning (working tree)
 - **Scorecard** - Supply chain security
-- **[zizmor]** - GitHub Actions static analysis (run offline)
+- **[zizmor]** - GitHub Actions static analysis, online: the
+  only scanner here that checks the actions a workflow `uses:`
+  against GHSAs
 - **[osv-scanner]** - Known-vulnerable *and known-malicious*
   packages in lockfiles (OSV's `MAL-*` feed, which Trivy lacks)
 
@@ -310,6 +312,14 @@ rules:
       - ci.yml:42:9 # one finding, line and column
 ```
 
+zizmor always runs **online**. Its `known-vulnerable-actions`,
+`impostor-commit` and `ref-confusion` audits read the GitHub
+API, and nothing else here checks the actions a workflow uses
+for advisories: `tj-actions/changed-files@v35` passes every other
+scanner. There is no offline switch; with no token the scan
+fails rather than quietly dropping those audits. The token gets
+the caller job's permissions, so keep them least-privilege.
+
 Inline works as well — `# zizmor: ignore[template-injection]`,
 comma-separated for several audits — but only in a YAML
 comment, not inside a block scalar. The action scans a
@@ -369,7 +379,10 @@ Skipping every scanner makes the action fail — the
 1. Installs [EarthBuild](https://github.com/EarthBuild/earthbuild)
    (hash-verified)
 2. Runs all scanners **in parallel** inside isolated containers
-   via `earth +scan` — no scanner has access to runner secrets
+   via `earth +scan`. One credential crosses in: zizmor's
+   online audits get `github_token` (default `github.token`) as
+   an earth secret - in no image layer, and no other scanner sees
+   it
 3. Collects SARIF results in `scan_reports/`
 4. Uploads to GitHub Security tab (public repos) or as
    build artifacts (private repos)

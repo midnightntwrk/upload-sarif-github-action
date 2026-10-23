@@ -7,7 +7,7 @@ branding:
 
 inputs:
   github_token:
-    description: "GitHub token for API calls (optional)"
+    description: "GitHub token for API calls: zizmor's online audits, and fetching the target commit. Defaults to github.token"
     required: false
     default: ""
   scorecard_checks:
@@ -87,6 +87,9 @@ runs:
         SKIP_TRIVY_SCAN: ${{ inputs.skip_trivy_scan }}
         SKIP_GITLEAKS_SCAN: ${{ inputs.skip_gitleaks_scan }}
         SKIP_OSV_SCAN: ${{ inputs.skip_osv_scan }}
+        # zizmor's online audits only - passed as an earth secret, so it never
+        # reaches the other scanners or any image layer.
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: |
         # Written once and re-read by the differential gate's base scan, so the
         # two passes cannot be given different scanners. Adding a scanner means
@@ -103,7 +106,7 @@ runs:
         } > "${RUNNER_TEMP:-/tmp}/scan-flags"
         mapfile -t flags < "${RUNNER_TEMP:-/tmp}/scan-flags"
 
-        /tmp/earth "${{ github.action_path }}+scan" \
+        /tmp/earth --secret GH_TOKEN "${{ github.action_path }}+scan" \
           --USER_SOURCE_DIR="$GITHUB_WORKSPACE" "${flags[@]}"
       working-directory: ${{ github.workspace }}
 
@@ -184,7 +187,7 @@ runs:
         INPUT_SEVERITY: ${{ inputs.fail_severity }}
         ACTION_PATH: ${{ github.action_path }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        GH_TOKEN: ${{ inputs.github_token }}
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: |
         base_dir="${RUNNER_TEMP:-/tmp}/base-src"
         "$ACTION_PATH/scripts/materialise-base.sh" \
@@ -207,7 +210,7 @@ runs:
         # the gate blocks every PR, and it looks exactly like correct policy.
         # Verified by scanning two different trees in sequence - the second
         # returned the first's findings, including its file paths.
-        /tmp/earth --no-cache "${ACTION_PATH}+scan" \
+        /tmp/earth --no-cache --secret GH_TOKEN "${ACTION_PATH}+scan" \
           --USER_SOURCE_DIR="$base_dir" "${flags[@]}" || true
 
         # Own directory: head SARIFs are already uploaded by now, and mixing the

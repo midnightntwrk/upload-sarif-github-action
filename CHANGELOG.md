@@ -11,6 +11,17 @@ and this project adheres to
 
 ### Added
 
+- **zizmor runs online, always.** Its `known-vulnerable-actions`
+  audit is the only check here on the actions a workflow `uses:` -
+  `tj-actions/changed-files@v35` passed every other scanner. Uses
+  `github_token`, default `github.token`, as an earth secret read
+  by `+zizmor` only. No offline switch: a missing token fails the
+  scan. Adds about 2s
+- **No apt in any scanner image.** The CA bundle comes from the
+  digest-pinned curl image and jq is a pinned, attested static
+  binary (1.8.2, also used by `+test`). apt installed whatever the
+  mirror served that day and was the slowest step: scorecard spent
+  41s of 53s in it. scorecard no longer pulls in git or perl
 - **osv-scanner v2.7.0 runs as a seventh scanner.** It overlaps
   trivy on CVEs, but its reason to be here is OSV's `MAL-*`
   malicious-packages feed, which trivy does not carry: a
