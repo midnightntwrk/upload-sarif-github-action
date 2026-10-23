@@ -74,7 +74,7 @@ test:
     # `earth +test` is the whole suite bar the integration test. Hermetic, so the
     # jq and bats versions are pinned - the severity ladder lives in jq now.
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     DO +APT_INSTALL --PACKAGES="jq git python3 python3-yaml"
     COPY +bats-bin/bats /opt/bats
     WORKDIR /work
@@ -111,7 +111,7 @@ opengrep-bin:
 
 opengrep:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     # No apt at runtime: opengrep is a PyInstaller bundle that ships its
     # own certifi, so it can validate TLS to the rule registry without
     # the system ca-certificates package.
@@ -132,7 +132,7 @@ opengrep:
 
 scorecard:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     DO +APT_INSTALL --PACKAGES="curl ca-certificates jq git"
     WORKDIR /src
 
@@ -270,7 +270,7 @@ trivy-bin:
 
 trivy:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     # ca-certificates: trivy (Go) uses the system cert pool for TLS to
     # ghcr.io when fetching the vulnerability DB at scan time.
     DO +APT_INSTALL --PACKAGES="ca-certificates"
@@ -322,7 +322,7 @@ gitleaks-bin:
 
 gitleaks:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     WORKDIR /src
 
     DO +APT_INSTALL --PACKAGES="jq"
@@ -383,7 +383,7 @@ zizmor-bin:
 
 zizmor:
     # renovate: datasource=docker packageName=ubuntu
-    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
     WORKDIR /src
 
     COPY +zizmor-bin/zizmor /usr/local/bin/zizmor
