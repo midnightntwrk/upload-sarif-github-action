@@ -218,9 +218,21 @@ fi
 # above, and so does a gate wired to fail unconditionally.
 echo "== a clean tree is not blocked =="
 
-mkdir -p "$work/clean"
+# Clean enough for scorecard's seven quiet passes to score 10, so the assertion
+# below holds scripts/scorecard.jq's exact reason strings against the real
+# binary. No dependency manifest: any pin can gain an advisory later, which
+# would turn Vulnerabilities into a flake.
+mkdir -p "$work/clean/.github/workflows"
 printf 'nothing to see here\n' > "$work/clean/README.md"
-printf 'requests==2.32.5\n' > "$work/clean/requirements.txt"
+cp "$ROOT/SECURITY.md" "$work/clean/SECURITY.md"
+printf 'version: 2\nupdates:\n  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: weekly\n' \
+    > "$work/clean/.github/dependabot.yml"
+{
+    printf 'on: push\npermissions: {}\njobs:\n  ok:\n    runs-on: ubuntu-latest\n'
+    printf '    permissions:\n      contents: read\n    steps:\n'
+    printf '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n'
+    printf '        with:\n          persist-credentials: false\n'
+} > "$work/clean/.github/workflows/ci.yml"
 if [ "$(scan "$work/clean" clean)" = ERR ]; then
     no "the clean scan failed" "$(tail -5 "$work/earth-clean.log" | tr '\n' '|')"
 else
@@ -237,6 +249,20 @@ else
     else
         no "expected rc 0 at critical on a clean tree, got $rc" \
            "$(grep -E '^  ' "$work/gate-clean-critical.log" | head -3 | tr '\n' '|')"
+    fi
+
+    # A pass that reappears here means scorecard reworded it (update the
+    # `quiet` table in scripts/scorecard.jq to the new text) or this tree
+    # stopped scoring 10.
+    loud="$(jq -r '.runs[].results[]
+        | select(.ruleId | IN("Binary-Artifacts", "Dangerous-Workflow",
+            "Dependency-Update-Tool", "Pinned-Dependencies", "Security-Policy",
+            "Token-Permissions", "Vulnerabilities"))
+        | "\(.ruleId): \(.message.text)"' "$work/reports-clean/scorecard-results.sarif")"
+    if [ -z "$loud" ]; then
+        ok "scorecard reports none of its seven passes"
+    else
+        no "scorecard reported a pass" "$(printf '%s' "$loud" | tr '\n' '|')"
     fi
 fi
 

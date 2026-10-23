@@ -11,6 +11,12 @@ and this project adheres to
 
 ### Changed
 
+- **A scorecard check with nothing wrong is not reported.** Seven
+  exact passes at 10/10 - `no binaries found in the repo`,
+  `0 existing vulnerabilities detected` and five more, listed in
+  `scripts/scorecard.jq` - no longer appear as `NOTE` rows. Matched
+  by check and reason, never by score: 8/10 still reports, and a
+  reason scorecard rewords reappears, which `tests/canary.sh` fails on
 - **opengrep v1.32.0, trivy 0.76.1, zizmor v1.31.1, scorecard
   5.6.0, checkov 3.3.30, pip-tools 7.6.2, codeql-action v4.39.1,
   upload-artifact v7.0.2.** Each binary checked against its
