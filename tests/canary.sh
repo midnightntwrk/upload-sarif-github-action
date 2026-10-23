@@ -53,6 +53,15 @@ plant_defects() {
     # trivy: a pin with known CVEs, several of them CRITICAL.
     printf 'django==1.11.0\n' > "$d/requirements.txt"
 
+    # osv-scanner: a lockfile naming flatmap-stream@0.1.1, the 2018 event-stream
+    # wallet stealer (MAL-2025-20690). Only the name is planted - nothing is
+    # fetched, and npm now serves a 0.0.1-security placeholder in its place.
+    # `resolved` is load-bearing: without it osv-scanner counts the package but
+    # matches nothing against it.
+    mkdir -p "$d/js"
+    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"}}}' \
+        > "$d/js/package-lock.json"
+
     # gitleaks: the PEM markers are assembled from parts so this file does not
     # itself contain the literal the scanner matches on.
     {
@@ -78,6 +87,20 @@ plant_defects() {
         printf 'resource "aws_s3_bucket" "b" {\n'
         printf '  bucket = "canary"\n  acl    = "public-read"\n}\n'
     } > "$d/main.tf"
+
+    # Suppressed in source: each defect a scanner above catches, excused by the
+    # scanner's own comment. Both are reported with `suppressions: inSource`
+    # and must reach the gate as named-but-not-counted.
+    {
+        printf 'import sys\n'
+        printf '# nosemgrep: python.lang.security.audit.eval-detected.eval-detected\n'
+        printf 'eval(sys.argv[1])\n'
+    } > "$d/suppressed.py"
+    {
+        printf 'resource "aws_s3_bucket" "s" {\n'
+        printf '  # checkov:skip=CKV_AWS_20:canary - suppressed on purpose\n'
+        printf '  bucket = "canary-skipped"\n  acl    = "public-read"\n}\n'
+    } > "$d/suppressed.tf"
 
     # scorecard reads the tree as a whole: no LICENSE plus the workflow above is
     # enough for Dangerous-Workflow to fail.
@@ -132,10 +155,10 @@ if [ "$(scan "$work/dirty" dirty)" = ERR ]; then
 fi
 
 produced="$(find "$work/reports-dirty" -name '*.sarif' | wc -l | tr -d ' ')"
-if [ "$produced" -eq 6 ]; then
-    ok "all six scanners produced a report"
+if [ "$produced" -eq 7 ]; then
+    ok "all seven scanners produced a report"
 else
-    no "expected 6 SARIF files, got $produced" \
+    no "expected 7 SARIF files, got $produced" \
        "$(find "$work/reports-dirty" -name '*.sarif' -exec basename {} \; | tr '\n' ' ')"
 fi
 
@@ -163,6 +186,7 @@ opengrep |opengrep.sarif          |run-shell-injection    |CRITICAL
 zizmor   |zizmor.sarif            |template-injection     |CRITICAL
 checkov  |checkov.sarif           |CKV_AWS_20             |HIGH
 scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
+osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
 EXPECTED
 
 # The calibration is policy, and policy that only exists in jq drifts. These
@@ -193,6 +217,28 @@ for gone in SAST Fuzzing Packaging; do
         ok "scorecard $gone is not reported at all"
     else
         no "scorecard still reports $gone"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Raw scanner output, not hand-written SARIF: the mark has to survive each
+# tool's real report, and the gate has to read it.
+echo "== in-source suppressions are honoured =="
+
+# By rule as well as file: the skip names one check, and checkov's other rules
+# on the same bucket (versioning, logging, ...) are rightly still counted.
+for triple in "opengrep.sarif|suppressed.py|eval-detected" "checkov.sarif|suppressed.tf|CKV_AWS_20"; do
+    IFS='|' read -r report file rule <<< "$triple"
+    out="$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 \
+        "$work/reports-dirty/$report")"
+    named="$(jq -r --arg f "$file" --arg r "$rule" \
+        '[.suppressions[] | select(contains($f) and contains($r))] | length' <<< "$out")"
+    counted="$(jq -r --arg f "$file" --arg r "$rule" \
+        '[.hits[] | select(.file == $f and (.rule | contains($r)))] | length' <<< "$out")"
+    if [ "$named" -ge 1 ] && [ "$counted" = 0 ]; then
+        ok "$report: $rule in $file is suppressed - named, not counted"
+    else
+        no "$report: $rule in $file named=$named counted=$counted" "expected named>=1 counted=0"
     fi
 done
 
@@ -236,10 +282,10 @@ if [ "$(scan "$work/clean" clean)" = ERR ]; then
     no "the clean scan failed" "$(tail -5 "$work/earth-clean.log" | tr '\n' '|')"
 else
     produced="$(find "$work/reports-clean" -name '*.sarif' | wc -l | tr -d ' ')"
-    if [ "$produced" -eq 6 ]; then
-        ok "all six scanners still reported on a clean tree"
+    if [ "$produced" -eq 7 ]; then
+        ok "all seven scanners still reported on a clean tree"
     else
-        no "expected 6 SARIF files on the clean tree, got $produced"
+        no "expected 7 SARIF files on the clean tree, got $produced"
     fi
 
     rc="$(gate clean critical)"

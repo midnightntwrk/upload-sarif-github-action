@@ -25,6 +25,7 @@ TARGETS=(
   "Earthfile|SCORECARD_VERSION|https://github.com/ossf/scorecard/releases/download/v{V}/scorecard_{V}_linux_arm64.tar.gz|https://github.com/ossf/scorecard/releases/download/v{V}/scorecard_{V}_linux_amd64.tar.gz"
   "Earthfile|TRIVY_VERSION|https://github.com/aquasecurity/trivy/releases/download/v{V}/trivy_{V}_Linux-ARM64.tar.gz|https://github.com/aquasecurity/trivy/releases/download/v{V}/trivy_{V}_Linux-64bit.tar.gz"
   "Earthfile|GITLEAKS_VERSION|https://github.com/gitleaks/gitleaks/releases/download/v{V}/gitleaks_{V}_linux_arm64.tar.gz|https://github.com/gitleaks/gitleaks/releases/download/v{V}/gitleaks_{V}_linux_x64.tar.gz"
+  "Earthfile|OSV_SCANNER_VERSION|https://github.com/google/osv-scanner/releases/download/{V}/osv-scanner_linux_arm64|https://github.com/google/osv-scanner/releases/download/{V}/osv-scanner_linux_amd64"
   "Earthfile|ZIZMOR_VERSION|https://github.com/zizmorcore/zizmor/releases/download/{V}/zizmor-aarch64-unknown-linux-gnu.tar.gz|https://github.com/zizmorcore/zizmor/releases/download/{V}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
   "action.yml|earthbuild_version|https://github.com/EarthBuild/earthbuild/releases/download/{V}/earth-linux-amd64"
 )

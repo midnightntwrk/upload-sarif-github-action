@@ -13,12 +13,15 @@ repos).
 - **[gitleaks]** - Secret scanning (working tree)
 - **Scorecard** - Supply chain security
 - **[zizmor]** - GitHub Actions static analysis (run offline)
+- **[osv-scanner]** - Known-vulnerable *and known-malicious*
+  packages in lockfiles (OSV's `MAL-*` feed, which Trivy lacks)
 
 Each scanner can be skipped individually via a
 `skip_<scanner>_scan` input.
 
 [zizmor]: https://github.com/zizmorcore/zizmor
 [gitleaks]: https://github.com/gitleaks/gitleaks
+[osv-scanner]: https://github.com/google/osv-scanner
 
 ## Usage
 
@@ -64,6 +67,7 @@ All inputs are optional.
 | `skip_zizmor_scan`    | `true` skips zizmor (Actions)   | `false`    |
 | `skip_trivy_scan`     | `true` skips Trivy (vulns)      | `false`    |
 | `skip_gitleaks_scan`  | `true` skips gitleaks (secrets) | `false`    |
+| `skip_osv_scan`       | `true` skips osv-scanner        | `false`    |
 
 `fail_severity` accepts: critical, high, medium, low,
 warning, note. Must be set on private repos.
@@ -104,6 +108,7 @@ claim.
 | opengrep | level × confidence | `error`+high → CRITICAL, +medium → HIGH, +low → MEDIUM; `warning` → LOW | CRITICAL |
 | zizmor | per-finding level | `error` → CRITICAL, `warning` → MEDIUM, `note` → LOW | CRITICAL |
 | scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM, `note` → NOTE | HIGH |
+| osv-scanner | rule CVSS; `MAL-*` id | `MAL-*` → CRITICAL; CVSS ≥9 CRITICAL, ≥7 HIGH, ≥4 MEDIUM, else LOW | CRITICAL |
 | others | level only | `error` → HIGH, `warning` → MEDIUM, `note` → LOW | HIGH |
 
 **opengrep needs the confidence tag.** `error` alone covers
@@ -207,8 +212,9 @@ checkov can find a comment in — Dockerfile, YAML, HCL:
 # checkov:skip=CKV_DOCKER_2:healthcheck lives in the compose file
 ```
 
-JSON has no comment syntax, which is why the `.checkov.yml`
-above has to be honoured at all.
+Reported, marked suppressed, and listed rather than counted -
+the same as `# nosemgrep`. JSON has no comment syntax, which is
+why the `.checkov.yml` above has to be honoured at all.
 
 ### trivy — `.trivyignore`
 
@@ -218,11 +224,11 @@ CVE-2018-18074
 CVE-2023-32681 exp:2026-11-09
 ```
 
-### scorecard — `osv-scanner.toml`
+### osv-scanner and scorecard — `osv-scanner.toml`
 
-Scorecard's `Vulnerabilities` check reads OSV and reports
-`N existing vulnerabilities detected`. It is the one scorecard
-check with an escape hatch, and it takes justifications:
+One file serves both: osv-scanner reads it directly, and
+Scorecard's `Vulnerabilities` check runs osv-scanner under the
+hood. It takes justifications and expiry dates:
 
 ```toml
 [[IgnoredVulns]]
@@ -240,7 +246,11 @@ The file sits **beside the manifest** it applies to
 propagate to child directories, so a monorepo needs one per
 manifest. Aliases of an ignored id are ignored too.
 
-Suppression pays off in steps, not at once: the score is
+A `MAL-*` id is malware, not a flaw. Treat it like a leaked
+credential: remove the dependency and assume anything that
+installed it is compromised, rather than ignore it.
+
+For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as
 `error` (HIGH) and anything below 8 as `warning` (MEDIUM). Of
 25 findings, 16 must be ignored before the check drops off
@@ -256,7 +266,11 @@ instead — it is an allowlist, so name the ones you keep.
 token = load(path)  # nosemgrep: python.lang.security.audit.hardcoded-password
 ```
 
-Bare `# nosemgrep` (or `# nosem`) suppresses every rule on the
+The finding is still reported, marked suppressed: the gate
+skips it and the job summary lists it under "suppressed in
+source", so a reviewer sees what the comments excuse. Prefer
+the rule id, and say why in the same comment. Bare `# nosemgrep`
+(or `# nosem`) suppresses every rule on the
 line; ids after `:` or `=`, comma-separated, suppress only
 those. A comment on the line directly above works too, for
 languages where a trailing comment will not parse.

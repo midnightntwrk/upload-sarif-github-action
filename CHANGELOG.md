@@ -9,6 +9,28 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **osv-scanner v2.7.0 runs as a seventh scanner.** It overlaps
+  trivy on CVEs, but its reason to be here is OSV's `MAL-*`
+  malicious-packages feed, which trivy does not carry: a
+  lockfile naming a known-malicious package now fails at every
+  `fail_severity`, like a committed secret. CVEs are banded by
+  CVSS. Rust call analysis stays off because it runs the
+  scanned repo's build scripts. A repo's `osv-scanner.toml` is
+  honoured, the same file scorecard's `Vulnerabilities` check
+  already reads. Skip it with `skip_osv_scan: true`
+
+### Fixed
+
+- **`# nosemgrep` and `# checkov:skip=` now clear the gate.** Both
+  scanners report a suppressed finding anyway, marked
+  `suppressions: inSource` as SARIF asks; GitHub's Security tab
+  honoured the mark and the gate did not, so the documented way to
+  clear a false positive left the build red on every repo. Honoured
+  per SARIF 3.35.3 (`rejected` and `underReview` still count), listed
+  in the job summary rather than hidden, never for a gitleaks secret
+
 ### Changed
 
 - **A scorecard check that scores 10 is not reported.**

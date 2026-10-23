@@ -9,7 +9,9 @@
 #     "tool":    "<the producing tool, or "">",
 #     "findings": [ "HIGH  rule-id  path: message", ... ],
 #     "unmapped": [ "UNKNOWN (rule-id)", ... ],
-#     "ignores":  [ "path:rule-id:line", ... ] }
+#     "ignores":  [ "path:rule-id:line", ... ],
+#     "suppressed":   <results suppressed in source - named, never counted>,
+#     "suppressions": [ "rule-id  path:line", ... ] }
 #
 # Formatting the lines here rather than in the caller is deliberate: the shell
 # then needs a count and some strings, never individual fields, so there is no
@@ -18,6 +20,17 @@
 # `ignores` is the gitleaks fingerprint format, so a build failure can hand the
 # contributor the exact line to paste into `.gitleaksignore`. It is only
 # populated for gitleaks output, since the format is that tool's.
+
+# In force per SARIF 3.35.3: a suppression with no status, or "accepted".
+# opengrep (`# nosemgrep`) and checkov (`# checkov:skip=`) report a suppressed
+# result rather than drop it, as 3.27.23 asks, and mark it `inSource`. Reading
+# past the mark is how a documented suppression cleared the Security tab and
+# left the build red. "underReview" and "rejected" are not in force. A secret is
+# never excused this way: a committed credential is compromised whatever the
+# comment beside it says, and gitleaks has its own exclusion files.
+def suppressed($tool):
+    $tool != "gitleaks"
+    and any((.suppressions // [])[]; (.status // "accepted") == "accepted");
 
 # Rule-level default levels, keyed by rule id, for results carrying no level.
 def rule_levels:
@@ -137,6 +150,7 @@ def severity($rule_levels; $rule_tags; $rule_confs; $tool):
   | .results[]?
   | severity($rule_levels; $rule_tags; $rule_confs; $tool_key) as $severity
   | { tool:     $tool,
+      suppressed: suppressed($tool_key),
       severity: $severity,
       # null for a severity outside $map: reported, but never gated on.
       rank:     $map[$severity],
@@ -150,8 +164,10 @@ def severity($rule_levels; $rule_tags; $rule_confs; $tool):
       message:  ((.message.text // "")
                  | gsub("\\s+"; " ")
                  | sub("\\s*Link: \\[[^\\]]*\\]\\([^)]*\\)\\s*$"; "")) } ]
-| ( [ .[] | select(.rank != null and .rank >= $threshold) ] ) as $hits
-| ( [ .[] | select(.rank == null) ] ) as $unmapped
+| ( [ .[] | select(.suppressed) ] ) as $quiet
+| ( [ .[] | select(.suppressed | not) ] ) as $live
+| ( [ $live[] | select(.rank != null and .rank >= $threshold) ] ) as $hits
+| ( [ $live[] | select(.rank == null) ] ) as $unmapped
 | { count:    ($hits | length),
     unknown:  ($unmapped | length),
     total:    (. | length),
@@ -168,4 +184,9 @@ def severity($rule_levels; $rule_tags; $rule_confs; $tool):
                 | "\(.severity) (rule \(if .rule == "" then "?" else .rule end))" ],
     ignores:  [ $hits[]
                 | select(.tool == "gitleaks" and .file != "")
-                | "\(.file):\(.rule):\(.line)" ] }
+                | "\(.file):\(.rule):\(.line)" ],
+    suppressed:   ($quiet | length),
+    suppressions: [ $quiet[]
+                    | "\(if .rule == "" then "-" else .rule end)"
+                      + "  \(if .file == "" then "-" else .file end)"
+                      + "\(if .line == 0 then "" else ":\(.line)" end)" ] }

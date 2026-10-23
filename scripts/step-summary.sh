@@ -237,4 +237,26 @@ if [ "$unmapped_total" -gt 0 ]; then
     fold_close
 fi
 
+# Suppressed in source (# nosemgrep, # checkov:skip=): not counted, but a
+# reviewer should see what the comments excuse. Capped for the same reason.
+suppressed_total=0
+for f in "${sarifs[@]}"; do
+    base="$(basename "$f" .sarif)"
+    [ "$(cat "$tmp/$base.state")" = OK ] || continue
+    suppressed_total=$((suppressed_total + $(jq -r '.suppressed // 0' "$tmp/$base.json")))
+done
+if [ "$suppressed_total" -gt 0 ]; then
+    fold_open "$suppressed_total finding(s) suppressed in source — listed, not gated"
+    for f in "${sarifs[@]}"; do
+        base="$(basename "$f" .sarif)"
+        [ "$(cat "$tmp/$base.state")" = OK ] || continue
+        jq -r --arg b "$base" '.suppressions[]? | "- `\($b)` \(.)"' "$tmp/$base.json"
+    done | head -n "$MAX_ROWS" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+    if [ "$suppressed_total" -gt "$MAX_ROWS" ]; then
+        out ""
+        out "_Showing $MAX_ROWS of $suppressed_total. The full set is in the \`sarif_reports\` artifact._"
+    fi
+    fold_close
+fi
+
 out "<sub>Raw SARIF for every scanner is attached to this run as \`sarif_reports\`.</sub>"

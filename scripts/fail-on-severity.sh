@@ -57,6 +57,8 @@ fi
 
 count=0
 unknown=0
+suppressed=0
+suppressed_list=""
 secrets=0
 secret_ignores=""
 
@@ -90,6 +92,10 @@ for f in "${sarifs[@]}"; do
 
     count=$((count + $(jq -r '.count' <<< "$report")))
     unknown=$((unknown + $(jq -r '.unknown' <<< "$report")))
+    suppressed=$((suppressed + $(jq -r '.suppressed // 0' <<< "$report")))
+    while IFS= read -r sup; do
+        [ -n "$sup" ] && suppressed_list="${suppressed_list}  ${sup}  [$f]"$'\n'
+    done <<< "$(jq -r '.suppressions[]?' <<< "$report")"
 
     # Collected so a failure can hand the contributor the exact exclusion line,
     # rather than leaving them to discover that gitleaks has two mechanisms and
@@ -113,6 +119,10 @@ for f in "${sarifs[@]}"; do
 done
 
 [ "$unknown" -gt 0 ] && echo "$unknown finding(s) had a severity outside the known set and were not gated"
+if [ "$suppressed" -gt 0 ]; then
+    echo "$suppressed finding(s) suppressed in source (# nosemgrep, # checkov:skip=) and not counted:"
+    printf '%s' "$suppressed_list"
+fi
 
 # Secrets are stamped CRITICAL by scripts/secrets-severity.jq, so they fail at
 # every threshold. That is deliberate, which makes the escape hatch worth
