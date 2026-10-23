@@ -33,6 +33,12 @@ and this project adheres to
 
 ### Changed
 
+- **A scorecard check that scores 10 is not reported.**
+  `no binaries found in the repo`, `0 existing vulnerabilities
+  detected` and the like no longer appear as `NOTE` rows. 8 or 9
+  still reports, as does an inconclusive -1. Scorecard's own
+  `--policy` `minScore: 10` does the same but needs its
+  experimental SARIF writer, which sets no `level`
 - **opengrep v1.32.0, trivy 0.76.1, zizmor v1.31.1, scorecard
   5.6.0, checkov 3.3.30, pip-tools 7.6.2, codeql-action v4.39.1,
   upload-artifact v7.0.2.** Each binary checked against its
