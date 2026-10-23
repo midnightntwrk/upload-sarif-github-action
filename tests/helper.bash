@@ -12,6 +12,7 @@ COUNT_SH="$ROOT/scripts/fail-on-severity.sh"
 GATE_SH="$ROOT/scripts/differential-gate.sh"
 BASE_SH="$ROOT/scripts/materialise-base.sh"
 SEVERITY_JQ="$ROOT/scripts/severity.jq"
+SCORECARD_JQ="$ROOT/scripts/scorecard.jq"
 SEVERITIES='{"INFO":0,"NONE":0,"NOTE":0,"LOW":1,"WARNING":1,"MEDIUM":2,"HIGH":3,"ERROR":3,"CRITICAL":4}'
 
 # Keep scratch-repo git calls away from the user's config: commit signing would

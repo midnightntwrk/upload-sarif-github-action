@@ -131,6 +131,12 @@ and never gated. `LOW  License  README.md  license file
 detected` said nothing was wrong in the column reserved for
 things that are.
 
+**A scorecard check that scores 10 is not reported at all**
+(`no binaries found in the repo`, `0 existing vulnerabilities
+detected`, ...): nothing is wrong, so there is nothing to say.
+8 or 9 still lands at `NOTE`, and an inconclusive check (-1) is
+still reported.
+
 A severity outside the known set (Trivy `UNKNOWN`, SARIF
 `none`) is annotated and not gated.
 
