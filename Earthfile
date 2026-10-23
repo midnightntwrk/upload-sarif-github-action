@@ -94,15 +94,15 @@ opengrep-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.30.0
+    ARG OPENGREP_VERSION=v1.32.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="opengrep_manylinux_aarch64"; \
-            HASH="a5d5a4a58ba5d46ff51e921663da1c2bba38f4b03987f4aeec87f16c6ad3ecae"; \
+            HASH="dc6229319c0d68948733053786a5614873947e5ec1d4669cc0e94ae9038cb99d"; \
         else \
             DIST="opengrep_manylinux_x86"; \
-            HASH="35779bdd72e92129c8df2a77f0c55e8c08356801ea92591ef32108d6b28d564c"; \
+            HASH="7360d60174880bd9214f2dfbe439b7bce82b7a3d44cfe945ba833c85cc8bda75"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o opengrep \
             "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${DIST}" && \
@@ -137,7 +137,7 @@ scorecard:
     WORKDIR /src
 
     # renovate: datasource=github-releases packageName=ossf/scorecard
-    ARG SCORECARD_VERSION=5.5.0
+    ARG SCORECARD_VERSION=5.6.0
     ARG SCORECARD_CHECKS
     # `--checks` is an allowlist with no exclude counterpart, so declining one
     # means naming the rest. Everything scorecard answers from --local, less
@@ -148,10 +148,10 @@ scorecard:
     ARG TARGETARCH
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
-            HASH="3ce59d20c1d53e540c4a14e0da1e0d96b3b294e8ddc96a3c5a7b8a637b32991e"; \
+            HASH="3eacaceb3fdee6d0ba5df6ede45d1ada73321949029921bb63633802e8ec5951"; \
         else \
             ARCH="amd64"; \
-            HASH="83b90a05c1540ef1390db1cd5711e5fd04be9c1d8537fb84d39d02092d6a8dff"; \
+            HASH="19bde07129450cb65a95c6e3b9f34e034341579e6f0e241546ec3ae6efb2dd9a"; \
         fi && \
         curl -fsSL --retry 3 --retry-delay 5 -o /tmp/scorecard.tar.gz \
             "https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_${ARCH}.tar.gz" && \
@@ -183,7 +183,7 @@ pip-tools-requirements:
     # renovate: datasource=docker packageName=python
     FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
     # renovate: datasource=pypi packageName=pip-tools
-    ARG PIP_TOOLS_VERSION=7.6.1
+    ARG PIP_TOOLS_VERSION=7.6.2
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
     # --allow-unsafe pins pip and setuptools too: python:3.13-slim no longer
     # ships setuptools, so without it the closure is short a package.
@@ -209,10 +209,10 @@ checkov-requirements:
     # asteval is pinned ==1.0.6 by checkov itself, so its bumps (sandbox-escape
     # GHSAs fixed in 1.0.9) cannot land here until checkov moves that pin.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.3.19
-    # Force the transitive GitPython up off 3.1.50 (HIGH CVEs GHSA-rwj8-pgh3-r573,
-    # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj; fixed in 3.1.52).
-    RUN printf 'checkov==%s\ngitpython>=3.1.52\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
+    ARG CHECKOV_VERSION=3.3.30
+    # Floor the transitive GitPython at its latest CVE fix (CVE-2026-114145,
+    # fixed in 3.2.1), so a checkov cap fails the resolve instead of regressing.
+    RUN printf 'checkov==%s\ngitpython>=3.2.1\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
         pip-compile --generate-hashes --strip-extras --output-file=/tmp/requirements.txt /tmp/requirements.in
     SAVE ARTIFACT /tmp/requirements.txt AS LOCAL requirements.txt
 
@@ -251,15 +251,15 @@ trivy-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.74.0
+    ARG TRIVY_VERSION=0.76.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz"; \
-            HASH="b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47aad5"; \
+            HASH="e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f"; \
         else \
             DIST="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"; \
-            HASH="2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"; \
+            HASH="c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o trivy.tar.gz \
             "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${DIST}" && \
@@ -364,15 +364,15 @@ zizmor-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
-    ARG ZIZMOR_VERSION=v1.30.1
+    ARG ZIZMOR_VERSION=v1.31.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="zizmor-aarch64-unknown-linux-gnu.tar.gz"; \
-            HASH="7ff1dce33bdd18fd2a4affe63bdd47efcccca97b2cec1c1863ec26e9e2647540"; \
+            HASH="37eebbd5762a44f262d94875431b14a6d2402991e90a685113ea97b8b41be833"; \
         else \
             DIST="zizmor-x86_64-unknown-linux-gnu.tar.gz"; \
-            HASH="e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a"; \
+            HASH="d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o zizmor.tar.gz \
             "https://github.com/zizmorcore/zizmor/releases/download/${ZIZMOR_VERSION}/${DIST}" && \
