@@ -7,6 +7,44 @@ their SARIF. Every scanner's output passes through one gate
 this repo has had is the same shape: **a scanner that looks like it is working
 while gating nothing.** Assume that failure first.
 
+## Fixing a failed scan
+
+You are here because a scan in **another** repository failed and its log
+linked this section. Make it green the right way: fix first, excuse second,
+and never excuse the three at the bottom. Every excuse carries a **reason a
+reviewer would accept** and, where the format allows, an **expiry**; the
+reason goes in the file, not in the PR description. If a finding is a false
+positive from the scanner itself, say so in the reason and open an issue on
+this action rather than widening a waiver.
+
+| Finding (as the log names it) | Fix first | Excuse one finding, if you must |
+| ----------------------------- | --------- | ------------------------------- |
+| **gitleaks** `generic-api-key`, `private-key`, ... | Rotate the credential. It is in git history, so it is compromised whatever happens to this PR. Then remove it. | Test fixtures and documented placeholders only: `.gitleaks.toml` `[[allowlists]]` with `paths` (a directory) or `.gitleaksignore` (one fingerprint per line, printed in the log). Keep the finding's `targetRules` narrow. |
+| **osv-scanner** `MAL-*` | Remove the package. Assume every machine that installed it is compromised. | Never. |
+| **osv-scanner** CVE / GHSA / RUSTSEC | Upgrade the package in the lockfile with the ecosystem's tool (`cargo update -p`, `npm update`, ...), never by hand. | `osv-scanner.toml` next to that lockfile: `[[IgnoredVulns]]` with the OSV id (RUSTSEC-/GHSA-/PYSEC-, not the CVE alias), `reason` and `ignoreUntil`. Legitimate when the vulnerable code is unreachable (say why) or the fix is not released yet. |
+| **osv-scanner** `deprecated-package` | Move to a version that is still published; a yank usually means a defect found before any advisory. | `[[PackageOverrides]]` `name`/`version`/`ecosystem` + `ignore = true` + `reason`. Legitimate when the newer version needs a toolchain you do not have yet. |
+| **osv-scanner** `license-violation` | Replace the dependency, or confirm it is a dev/optional dependency the lockfile could not mark as such. | `[[PackageOverrides]]` `license.ignore = true` + `reason` (dev tool, separate process, exception you hold). Do **not** add the licence to `licenses_allowlist` to clear one package: that changes policy for the whole repository and needs the repository owner. |
+| **osv-scanner** `license-unknown` | Read the package's own LICENSE. | `[[PackageOverrides]]` `license.override = ["<SPDX id>"]` recording what you read. |
+| **trivy** CVE in a manifest | Upgrade, as above. | `.trivyignore`: the CVE id, with `# reason` and `exp:YYYY-MM-DD`. Mirror into `osv-scanner.toml` so the two scanners agree. |
+| **opengrep** rule | Change the code: the rule names the pattern. | `# nosemgrep: <full rule id>` on the line, with a comment saying why it is safe here. Never a bare `# nosemgrep`. |
+| **checkov** `CKV_*` | Fix the resource. | `# checkov:skip=<ID>:<reason>` inside the resource block. |
+| **zizmor** `template-injection`, `dangerous-triggers`, ... | Fix the workflow: `env:` indirection for expressions, pin actions by SHA, drop `pull_request_target`. | `# zizmor: ignore[<rule>]` on the line, or `.github/zizmor.yml` `rules.<rule>.ignore: [file.yml]`, with a comment on why the trigger is safe (e.g. the job checks the commenter's permission first). |
+| **zizmor** `known-vulnerable-actions` | Bump the action to the fixed release. | Never: the advisory is against the action you are running. |
+| **scorecard** `Dangerous-Workflow`, `Pinned-Dependencies`, ... | Do what the check says; each is a score, and the score moves one finding at a time. | Decline a whole check via `scorecard_checks` only when it cannot apply to the repository, and say why in the workflow. |
+
+Never excuse: a committed secret (rotate it), a `MAL-*` package (remove it),
+a `known-vulnerable-actions` finding (bump it). Each of those is a fact about
+something already exposed, and a waiver only hides the exposure.
+
+Do not raise `fail_severity`, turn `differential_gate` off, or set
+`skip_<scanner>_scan` to pass a PR. Those are repository policy, owned by the
+people who set them; propose the change to them separately.
+
+Verify before pushing: the waiver must clear the **gate**, not only GitHub's
+Security tab - see the next section. `jq '.runs[].results[] | {ruleId,
+suppressions}' scan_reports/<tool>.sarif` shows what the scanner actually
+emitted.
+
 ## Suppressions: the gate must agree with the scanner
 
 A scanner's in-source suppression has to clear the **gate**, not just GitHub's

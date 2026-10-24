@@ -11,6 +11,15 @@ and this project adheres to
 
 ### Added
 
+- **A failed gate links to the fixing guide.** The gate's log line,
+  the `::error::` annotation and the job summary all point at
+  `AGENTS.md#fixing-a-failed-scan`: one table of how each kind of
+  finding is fixed, how one is excused when it must be, and the
+  three that never are (a committed secret, a `MAL-*` package, a
+  known-vulnerable action). Written for whoever is about to make
+  the build green, agent or person. The suite checks the anchor
+  exists and that the guide names every tool and rule
+
 - **Dependency licences are findings.** osv-scanner now reports
   every package's licence (deps.dev's) and `scripts/osv.jq`
   checks it against `licenses_allowlist`: a package outside the

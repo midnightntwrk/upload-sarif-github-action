@@ -253,13 +253,14 @@ runs:
         EVENT_NAME: ${{ github.event_name }}
         HEAD_COUNT: ${{ steps.severity_gate.outputs.head_count }}
         BASE_COUNT: ${{ steps.base_scan.outputs.base_count }}
+        GUIDE: ${{ github.server_url }}/${{ github.action_repository }}/blob/main/AGENTS.md#fixing-a-failed-scan
       run: |
         if [ "$DIFFERENTIAL" != "true" ]; then
-          echo "::error::findings at or above the severity threshold (see above)"
+          echo "::error::findings at or above the severity threshold (see above) - how to fix or excuse each kind: $GUIDE"
           exit 1
         fi
         if [ "$EVENT_NAME" != "pull_request" ]; then
-          echo "::error::findings at or above the severity threshold (see above)"
+          echo "::error::findings at or above the severity threshold (see above) - how to fix or excuse each kind: $GUIDE"
           echo "differential_gate is enabled but only applies to pull_request events;" \
                "this is a '$EVENT_NAME' event, so the absolute gate applies."
           exit 1
@@ -292,6 +293,7 @@ runs:
         # is the ephemeral refs/pull/N/merge commit, which is not what a reader
         # following the link expects to land on.
         LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        GUIDE: ${{ github.server_url }}/${{ github.action_repository }}/blob/main/AGENTS.md#fixing-a-failed-scan
       run: |
         # scan_reports only. On the differential path scan_reports_base also
         # exists, and summing the two would report the target branch's findings
@@ -315,6 +317,7 @@ runs:
             verdict="$verdict The count did not go down: $BASE_COUNT on the target"
             verdict="$verdict branch, $HEAD_COUNT with this PR applied."
           fi
+          verdict="$verdict [How to fix or excuse each kind of finding]($GUIDE)."
         fi
 
         # Never fail the build over a report: the verdict is decided above, and

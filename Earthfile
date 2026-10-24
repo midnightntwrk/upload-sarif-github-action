@@ -125,9 +125,10 @@ test:
     # The merge script reads the action's own defaults, so the suite asserts
     # against the file the checkov stage actually ships.
     COPY .checkov.yml /work/.checkov.yml
-    # A test input, not documentation: the suite asserts that the anchor printed
-    # in a build failure resolves to a heading that actually exists.
-    COPY README.md /work/README.md
+    # Test inputs, not documentation: the suite asserts that the anchors printed
+    # in a build failure resolve to headings that actually exist, and that the
+    # fixing guide covers every finding this action can produce.
+    COPY README.md AGENTS.md /work/
     RUN /opt/bats/bin/bats --print-output-on-failure tests/
 
 opengrep-bin:
