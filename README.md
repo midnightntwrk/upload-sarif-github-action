@@ -289,8 +289,9 @@ osv-scanner) is checked against `licenses_allowlist`. The
 default, [`scripts/license-allowlist.txt`](scripts/license-allowlist.txt),
 is what an Apache-2.0 project may depend on, after the Apache
 Software Foundation's [third-party licence policy](https://www.apache.org/legal/resolved.html):
-permissive licences and weak copyleft (MPL, EPL, CDDL) in; GPL,
-LGPL, AGPL, SSPL, BUSL and the non-commercial Creative Commons
+permissive licences and weak copyleft (MPL, EPL, CDDL, and -
+departing from the ASF - LGPL, as linked-not-modified) in;
+GPL, AGPL, SSPL, BUSL and the non-commercial Creative Commons
 out. `GPL-3.0-or-later WITH Classpath-exception-2.0`, which
 polkadot-sdk's client crates carry, is allowed. Expressions are
 evaluated properly: `Apache-2.0 OR MIT` passes on either,
@@ -332,7 +333,7 @@ license.override = ["MIT"]
 ```
 
 A repository under a different licence, or whose policy differs,
-sets its own list: `licenses_allowlist: "MIT,Apache-2.0,LGPL-3.0-or-later"`.
+sets its own list: `licenses_allowlist: "MIT,Apache-2.0,MPL-2.0"`.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as

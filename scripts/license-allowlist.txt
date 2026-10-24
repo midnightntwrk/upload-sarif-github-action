@@ -10,11 +10,15 @@
 # https://www.apache.org/legal/resolved.html: Category A (permissive) and
 # Category B (weak copyleft - fine to depend on and ship unmodified; the
 # copyleft reaches only that package's own files) are in. Category X - GPL,
-# LGPL, AGPL, SSPL, BUSL, the Commons Clause, CC non-commercial / no-derivs,
+# AGPL, SSPL, BUSL, the Commons Clause, CC non-commercial / no-derivs,
 # BSD-4-Clause, the JSON licence - is out: each puts a condition on the work
-# that includes it which Apache-2.0 cannot carry. A repository that is itself
-# GPL, or that only ships a dependency as a separate process, overrides this
-# list with `licenses_allowlist`, or excuses one package in osv-scanner.toml.
+# that includes it which Apache-2.0 cannot carry. One departure from the ASF:
+# LGPL is in. The ASF excludes it; here it is treated as weak copyleft, the
+# way it reads for a dependency that is linked, not modified (web3, sharp's
+# libvips builds). Permissive first; tighten when there is a reason to.
+# A repository that is itself GPL, or that only ships a dependency as a
+# separate process, overrides this list with `licenses_allowlist`, or excuses
+# one package in osv-scanner.toml.
 
 # --- Category A: permissive ----------------------------------------------------
 Apache-2.0
@@ -93,6 +97,14 @@ SPL-1.0
 UPL-1.0 WITH Universal-FOSS-exception-1.0
 
 # --- Project additions ---------------------------------------------------------
+# LGPL: linked, not modified - see the header. `LGPL-3.0+` and bare `LGPL-3.0`
+# normalise to these.
+LGPL-2.0-only
+LGPL-2.0-or-later
+LGPL-2.1-only
+LGPL-2.1-or-later
+LGPL-3.0-only
+LGPL-3.0-or-later
 # polkadot-sdk's client crates: the exception lets Apache-2.0 code link them.
 GPL-3.0-or-later WITH Classpath-exception-2.0
 GPL-3.0-only WITH Classpath-exception-2.0

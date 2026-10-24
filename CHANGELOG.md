@@ -18,8 +18,8 @@ and this project adheres to
   a LOW `license-unknown` (public-registry packages only). The
   default list, `scripts/license-allowlist.txt`, is what an
   Apache-2.0 project may depend on, after the ASF third-party
-  licence policy, plus polkadot-sdk's `GPL-3.0-or-later WITH
-  Classpath-exception-2.0`. SPDX expressions are evaluated in
+  licence policy, plus LGPL (linked, not modified) and
+  polkadot-sdk's `GPL-3.0-or-later WITH Classpath-exception-2.0`. SPDX expressions are evaluated in
   `scripts/spdx.jq` - OR, AND, WITH, parentheses, legacy
   spellings - because osv-scanner's own allowlist rejects any
   `WITH` form and never matches one against its base. Dev and
@@ -27,8 +27,7 @@ and this project adheres to
   `none` turns the rules off. Across 64 midnightntwrk
   repositories the default flags 336 violations, almost all
   `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`
-  (GPL-3.0-only) under compact-js and polkadot-js, and LGPL
-  (web3, sharp's libvips binaries, rpc-websockets)
+  (GPL-3.0-only) under compact-js and polkadot-js
 
 - **Yanked and deprecated packages are findings.** osv-scanner
   now runs with `--x-flag-deprecated-packages`, and a version the

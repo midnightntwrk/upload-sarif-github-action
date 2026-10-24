@@ -17,12 +17,13 @@ ids() { sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$LIST" |
     done < <(ids)
 }
 
-@test "permissive and weak-copyleft licences are in; strong copyleft is out" {
+@test "permissive and weak-copyleft licences are in, LGPL included; strong copyleft is out" {
     for id in Apache-2.0 MIT BSD-3-Clause ISC MPL-2.0 EPL-2.0 CDDL-1.0 Unicode-3.0 \
+              LGPL-2.1-only LGPL-2.1-or-later LGPL-3.0-only LGPL-3.0-or-later \
               "GPL-3.0-or-later WITH Classpath-exception-2.0"; do
         ids | grep -qxF "$id" || { echo "missing: $id"; return 1; }
     done
-    for id in GPL-3.0-only GPL-3.0-or-later GPL-2.0-only LGPL-3.0-only LGPL-2.1-only AGPL-3.0-only \
+    for id in GPL-3.0-only GPL-3.0-or-later GPL-2.0-only AGPL-3.0-only \
               SSPL-1.0 BUSL-1.1 UNKNOWN; do
         ids | grep -qxF "$id" && { echo "present: $id"; return 1; }
     done
