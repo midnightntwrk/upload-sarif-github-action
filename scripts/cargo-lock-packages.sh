@@ -24,7 +24,12 @@ index_one() {
             if (line) printf "%s\t%s\t%s\t%d\t%s\n", path, name, version, line, git
             name = ""; version = ""; line = 0; git = "false"
         }
-        /^\[\[package\]\]/ { flush(); line = FNR; next }
+        # Any table header ends the current package. Only [[package]] opens
+        # one: [[patch.unused]] has a name and version too, and a field read
+        # from there would overwrite the last real package.
+        /^\[\[package\]\]/ { flush(); in_pkg = 1; line = FNR; next }
+        /^\[/              { flush(); in_pkg = 0; next }
+        !in_pkg            { next }
         /^name = "/        { v = $0; sub(/^name = "/, "", v);    sub(/"$/, "", v); name = v }
         /^version = "/     { v = $0; sub(/^version = "/, "", v); sub(/"$/, "", v); version = v }
         /^source = "git\+/ { git = "true" }

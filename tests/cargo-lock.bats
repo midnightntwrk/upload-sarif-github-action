@@ -69,3 +69,27 @@ LOCK
     [ "$status" -eq 0 ]
     [ "$output" = "[]" ]
 }
+
+# Cargo.lock has tables other than [[package]]: [[patch.unused]] carries a name
+# and version, [metadata] carries checksums. Fields outside a package block must
+# not be read, or the last package's record is overwritten - and a `source =
+# "git+` line in another table would mark a registry crate as git and drop its
+# finding.
+@test "fields outside a [[package]] block are ignored" {
+    lockfile Cargo.lock
+    cat >> "$TMP/Cargo.lock" <<'LOCK'
+
+[[patch.unused]]
+name = "unused-patch"
+version = "9.9.9"
+source = "git+https://github.com/example/unused.git#deadbeef"
+
+[metadata]
+"checksum spin 0.9.8" = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+LOCK
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq 'length' <<< "$output")" = 3 ]
+    [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.git)"' <<< "$output")" = "0.1.0 18 false" ]
+    [ "$(jq '[.[] | select(.name == "unused-patch")] | length' <<< "$output")" = 0 ]
+}
