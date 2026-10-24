@@ -73,6 +73,7 @@ scan:
     ARG SKIP_TRIVY_SCAN=false
     ARG SKIP_GITLEAKS_SCAN=false
     ARG SKIP_OSV_SCAN=false
+    ARG LICENSES_ALLOWLIST=default
     IF [ "$SKIP_OPENGREP_SCAN" != "true" ]
         BUILD +opengrep
     END
@@ -92,7 +93,7 @@ scan:
         BUILD +gitleaks
     END
     IF [ "$SKIP_OSV_SCAN" != "true" ]
-        BUILD +osv
+        BUILD +osv --LICENSES_ALLOWLIST="$LICENSES_ALLOWLIST"
     END
 
 bats-bin:
@@ -124,9 +125,10 @@ test:
     # The merge script reads the action's own defaults, so the suite asserts
     # against the file the checkov stage actually ships.
     COPY .checkov.yml /work/.checkov.yml
-    # A test input, not documentation: the suite asserts that the anchor printed
-    # in a build failure resolves to a heading that actually exists.
-    COPY README.md /work/README.md
+    # Test inputs, not documentation: the suite asserts that the anchors printed
+    # in a build failure resolve to headings that actually exist, and that the
+    # fixing guide covers every finding this action can produce.
+    COPY README.md AGENTS.md /work/
     RUN /opt/bats/bin/bats --print-output-on-failure tests/
 
 opengrep-bin:
@@ -382,10 +384,13 @@ osv:
 
     RUN useradd -m -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
-    COPY scripts/osv.jq /scripts/osv.jq
+    COPY scripts/osv.jq scripts/spdx.jq scripts/license-allowlist.txt /scripts/
     COPY scripts/cargo-lock-packages.sh /scripts/cargo-lock-packages.sh
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
+    # SPDX allowlist for the licence rules: `default` is scripts/license-allowlist.txt
+    # (what an Apache-2.0 project may depend on), `none` turns them off.
+    ARG LICENSES_ALLOWLIST=default
 
     # Overlaps trivy on CVEs (different advisory sources); the reasons it is
     # here are OSV's MAL-* malicious-packages feed, which trivy does not carry,
@@ -399,6 +404,11 @@ osv:
     # so existing code-scanning alerts keep their identity.
     # --x-flag-deprecated-packages: one deps.dev lookup per package, about
     # 2.5s more on a 1,600-crate lockfile.
+    # --licenses --all-packages: deps.dev's licence expression for every
+    # package, clean ones included (otherwise the JSON lists only packages
+    # with something to report). The allowlist is applied by scripts/osv.jq
+    # through scripts/spdx.jq, not here: osv-scanner's own evaluator rejects a
+    # `WITH` form in the allowlist and never matches one against its base.
     # --no-call-analysis=all: rust call analysis runs the scanned repo's build
     # scripts, i.e. untrusted code. Off explicitly, not by default.
     # --no-resolve: otherwise a bare `requests==2.32.5` has its transitive deps
@@ -409,7 +419,8 @@ osv:
     # writes no SARIF. Exit 1 = vulnerabilities found (gated downstream); any
     # other non-zero is a real error. A repo's osv-scanner.toml is honoured.
     RUN osv-scanner scan source -r --allow-no-lockfiles --no-resolve --no-call-analysis=all \
-            --x-flag-deprecated-packages --format json --output-file /output/osv.json . ; \
+            --x-flag-deprecated-packages --all-packages --licenses \
+            --format json --output-file /output/osv.json . ; \
         rc=$?; [ $rc -le 1 ] || exit $rc
 
     # Where each crate sits in its Cargo.lock, and whether it came from git:
@@ -418,9 +429,11 @@ osv:
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
-    # MEDIUM - see scripts/osv.jq.
-    RUN jq -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
+    # MEDIUM, a licence outside the allowlist HIGH, an undeterminable licence
+    # LOW - see scripts/osv.jq.
+    RUN jq -L /scripts -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
             --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
+            --arg licenses "$LICENSES_ALLOWLIST" --rawfile default_licenses /scripts/license-allowlist.txt \
             /output/osv.json > /output/osv-scanner.sarif
 
     SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif

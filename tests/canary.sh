@@ -82,7 +82,16 @@ plant_defects() {
         printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
         printf 'checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"\n\n'
         printf '[[package]]\nname = "sp-api-proc-macro"\nversion = "15.0.0"\n'
-        printf 'source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2609#9c7455ea"\n'
+        printf 'source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2609#9c7455ea"\n\n'
+        # Licences: polkadot-primitives is GPL-3.0-only on crates.io, outside
+        # the default allowlist; ring 0.16.20 carries licence text deps.dev
+        # cannot map to an SPDX id ("non-standard").
+        printf '[[package]]\nname = "polkadot-primitives"\nversion = "18.0.0"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n\n'
+        printf '[[package]]\nname = "ring"\nversion = "0.16.20"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n'
     } > "$d/rust/Cargo.lock"
 
     # gitleaks: the PEM markers are assembled from parts so this file does not
@@ -224,6 +233,8 @@ scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
 osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
 osv      |osv-scanner.sarif       |deprecated-package.*rust/Cargo\.lock |MEDIUM
 osv      |osv-scanner.sarif       |deprecated-package.*js/package-lock\.json |MEDIUM
+osv      |osv-scanner.sarif       |license-violation.*rust/Cargo\.lock |HIGH
+osv      |osv-scanner.sarif       |license-unknown.*rust/Cargo\.lock   |LOW
 EXPECTED
 
 # ---------------------------------------------------------------------------

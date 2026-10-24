@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 #
 # scripts/cargo-lock-packages.sh: every [[package]] in every Cargo.lock under a
-# root, with the line it starts on and whether it comes from git. osv.jq uses
-# the line to place a deprecated-package finding and the git flag to drop a
-# crate that merely shares a name and version with a yanked crates.io release.
+# root, with the line it starts on and where it comes from: registry, git or
+# path. osv.jq uses the line to place a finding, `git` to drop a crate that
+# merely shares a name and version with a yanked crates.io release, and `path`
+# to keep workspace members out of the unknown-licence rule.
 
 load helper
 
@@ -49,12 +50,12 @@ LOCK
     [ "$(jq -r '.[] | select(.name == "local-crate") | .line' <<< "$output")" = 18 ]
 }
 
-@test "marks git-sourced packages and nothing else" {
+@test "records where each package comes from: registry, git or path" {
     lockfile Cargo.lock
     run bash "$SCRIPT" "$TMP"
-    [ "$(jq -r '.[] | select(.name == "sp-api-proc-macro") | .git' <<< "$output")" = true ]
-    [ "$(jq -r '.[] | select(.name == "spin") | .git' <<< "$output")" = false ]
-    [ "$(jq -r '.[] | select(.name == "local-crate") | .git' <<< "$output")" = false ]
+    [ "$(jq -r '.[] | select(.name == "sp-api-proc-macro") | .source' <<< "$output")" = git ]
+    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = registry ]
+    [ "$(jq -r '.[] | select(.name == "local-crate") | .source' <<< "$output")" = path ]
 }
 
 @test "paths are relative to the root, for every lockfile under it" {
@@ -90,6 +91,6 @@ LOCK
     run bash "$SCRIPT" "$TMP"
     [ "$status" -eq 0 ]
     [ "$(jq 'length' <<< "$output")" = 3 ]
-    [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.git)"' <<< "$output")" = "0.1.0 18 false" ]
+    [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.source)"' <<< "$output")" = "0.1.0 18 path" ]
     [ "$(jq '[.[] | select(.name == "unused-patch")] | length' <<< "$output")" = 0 ]
 }
