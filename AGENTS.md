@@ -36,6 +36,11 @@ Security tab.
   no advisory id, so `IgnoredVulns` cannot excuse it; `[[PackageOverrides]]`
   with `ignore = true` on the name and version can, and drops the package
   from the vulnerability report too.
+- A `license-violation` is excused per package with `[[PackageOverrides]]`
+  `license.ignore = true`; a `license-unknown` is answered with
+  `license.override = ["<SPDX id>"]`. Both are osv-scanner's own config and
+  take effect before osv.jq sees the package. Never answer either by adding
+  the licence to the allowlist "for now".
 
 When a suppression "does not work", check the raw SARIF before the comment:
 `jq '.runs[].results[] | {ruleId, suppressions}' scan_reports/<tool>.sarif`.
@@ -45,9 +50,13 @@ When a suppression "does not work", check the raw SARIF before the comment:
 SARIF `level` tops out at `error`, so it can never mean CRITICAL. Each tool's
 real signal is mapped in its own jq, not in shared code: `secrets-severity.jq`
 (gitleaks → CRITICAL), `scorecard.jq`, `osv.jq` (`MAL-*` → CRITICAL, CVSS
-bands, deprecated → MEDIUM; it also *writes* osv-scanner's SARIF from the JSON
-report, because upstream's drops deprecated-only packages), and per-tool
-`calibrate` in `severity.jq`. Change a mapping only with a
+bands, deprecated → MEDIUM, licence violation → HIGH, licence unknown → LOW;
+it also *writes* osv-scanner's SARIF from the JSON report, because upstream's
+drops deprecated-only packages and carries no licences), `spdx.jq` (the
+allowlist matcher - osv-scanner's own cannot express a `WITH` exception), and
+per-tool `calibrate` in `severity.jq`. The default allowlist is
+`scripts/license-allowlist.txt`; change it with a reason in the commit and a
+test in `tests/license-allowlist.bats`. Change a mapping only with a
 test in `tests/calibration.bats` or the tool's own `.bats`.
 
 ## Adding or bumping a scanner

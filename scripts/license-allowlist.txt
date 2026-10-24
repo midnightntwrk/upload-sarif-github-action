@@ -1,0 +1,100 @@
+# Default licence allowlist: what an Apache-2.0 project may depend on.
+#
+# Read by osv.jq when `licenses_allowlist` is `default`. SPDX identifiers, one
+# per line, matched case-insensitively against each package's licence
+# expression (OR / AND / WITH / parentheses - see scripts/spdx.jq). An allowed
+# base licence allows its `WITH` exceptions; a banned base needs the exact
+# `X WITH exception` line.
+#
+# The split is the Apache Software Foundation's third-party licence policy,
+# https://www.apache.org/legal/resolved.html: Category A (permissive) and
+# Category B (weak copyleft - fine to depend on and ship unmodified; the
+# copyleft reaches only that package's own files) are in. Category X - GPL,
+# LGPL, AGPL, SSPL, BUSL, the Commons Clause, CC non-commercial / no-derivs,
+# BSD-4-Clause, the JSON licence - is out: each puts a condition on the work
+# that includes it which Apache-2.0 cannot carry. A repository that is itself
+# GPL, or that only ships a dependency as a separate process, overrides this
+# list with `licenses_allowlist`, or excuses one package in osv-scanner.toml.
+
+# --- Category A: permissive ----------------------------------------------------
+Apache-2.0
+Apache-1.1
+0BSD
+BSD-2-Clause
+BSD-2-Clause-Patent
+BSD-3-Clause
+BSD-3-Clause-Clear
+MIT
+MIT-0
+X11
+ISC
+ICU
+NCSA
+Unlicense
+CC0-1.0
+CC-PDDC
+CC-BY-2.5
+CC-BY-3.0
+CC-BY-4.0
+Zlib
+libpng
+libpng-2.0
+bzip2-1.0.6
+BSL-1.0
+PostgreSQL
+Python-2.0
+Python-2.0.1
+PSF-2.0
+CNRI-Python
+W3C
+W3C-20150513
+W3C-19980720
+Unicode-DFS-2015
+Unicode-DFS-2016
+Unicode-3.0
+Unicode-TOU
+OpenSSL
+SSLeay-standalone
+curl
+HPND
+MS-PL
+AFL-3.0
+Artistic-2.0
+OFL-1.1
+UPL-1.0
+BlueOak-1.0.0
+CDLA-Permissive-1.0
+CDLA-Permissive-2.0
+EDL-1.0
+WTFPL
+Xnet
+TCL
+DOC
+ImageMagick
+NTP
+FTL
+Ruby
+PHP-3.01
+MulanPSL-2.0
+
+# --- Category B: weak copyleft ---------------------------------------------------
+MPL-1.0
+MPL-1.1
+MPL-2.0
+EPL-1.0
+EPL-2.0
+CDDL-1.0
+CDDL-1.1
+CPL-1.0
+IPL-1.0
+ErlPL-1.1
+OSL-3.0
+SPL-1.0
+UPL-1.0 WITH Universal-FOSS-exception-1.0
+
+# --- Project additions ---------------------------------------------------------
+# polkadot-sdk's client crates: the exception lets Apache-2.0 code link them.
+GPL-3.0-or-later WITH Classpath-exception-2.0
+GPL-3.0-only WITH Classpath-exception-2.0
+GPL-2.0-or-later WITH Classpath-exception-2.0
+GPL-2.0-only WITH Classpath-exception-2.0
