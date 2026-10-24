@@ -32,6 +32,10 @@ Security tab.
   `.checkov.yml` - carry a reason and, where the format allows, an expiry.
   One waiver for one CVE goes in **both** `.trivyignore` and
   `osv-scanner.toml` (scorecard's `Vulnerabilities` reads the latter too).
+- A `deprecated-package` finding (yanked crate, deprecated npm version) has
+  no advisory id, so `IgnoredVulns` cannot excuse it; `[[PackageOverrides]]`
+  with `ignore = true` on the name and version can, and drops the package
+  from the vulnerability report too.
 
 When a suppression "does not work", check the raw SARIF before the comment:
 `jq '.runs[].results[] | {ruleId, suppressions}' scan_reports/<tool>.sarif`.
@@ -41,7 +45,9 @@ When a suppression "does not work", check the raw SARIF before the comment:
 SARIF `level` tops out at `error`, so it can never mean CRITICAL. Each tool's
 real signal is mapped in its own jq, not in shared code: `secrets-severity.jq`
 (gitleaks → CRITICAL), `scorecard.jq`, `osv.jq` (`MAL-*` → CRITICAL, CVSS
-bands), and per-tool `calibrate` in `severity.jq`. Change a mapping only with a
+bands, deprecated → MEDIUM; it also *writes* osv-scanner's SARIF from the JSON
+report, because upstream's drops deprecated-only packages), and per-tool
+`calibrate` in `severity.jq`. Change a mapping only with a
 test in `tests/calibration.bats` or the tool's own `.bats`.
 
 ## Adding or bumping a scanner

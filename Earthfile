@@ -383,12 +383,22 @@ osv:
     RUN useradd -m -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
     COPY scripts/osv.jq /scripts/osv.jq
+    COPY scripts/cargo-lock-packages.sh /scripts/cargo-lock-packages.sh
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
 
-    # Overlaps trivy on CVEs (different advisory sources); the reason it is here
-    # is OSV's MAL-* malicious-packages feed, which trivy does not carry.
+    # Overlaps trivy on CVEs (different advisory sources); the reasons it is
+    # here are OSV's MAL-* malicious-packages feed, which trivy does not carry,
+    # and deps.dev's deprecation data: a crate yanked from crates.io, an npm
+    # version deprecated or unpublished, neither of which has an advisory id.
     #
+    # --format json, not sarif: osv-scanner's SARIF drops a deprecated package
+    # that has no vulnerability (google/osv-scanner#3164), and a yanked crate
+    # with no advisory is exactly the case worth reporting. scripts/osv.jq
+    # writes the SARIF from the JSON - same rule ids and messages as upstream,
+    # so existing code-scanning alerts keep their identity.
+    # --x-flag-deprecated-packages: one deps.dev lookup per package, about
+    # 2.5s more on a 1,600-crate lockfile.
     # --no-call-analysis=all: rust call analysis runs the scanned repo's build
     # scripts, i.e. untrusted code. Off explicitly, not by default.
     # --no-resolve: otherwise a bare `requests==2.32.5` has its transitive deps
@@ -399,11 +409,19 @@ osv:
     # writes no SARIF. Exit 1 = vulnerabilities found (gated downstream); any
     # other non-zero is a real error. A repo's osv-scanner.toml is honoured.
     RUN osv-scanner scan source -r --allow-no-lockfiles --no-resolve --no-call-analysis=all \
-            --format sarif --output-file /output/osv-raw.sarif . ; \
+            --x-flag-deprecated-packages --format json --output-file /output/osv.json . ; \
         rc=$?; [ $rc -le 1 ] || exit $rc
 
-    # Malware is CRITICAL, CVEs banded by CVSS - see scripts/osv.jq.
-    RUN jq -f /scripts/osv.jq /output/osv-raw.sarif > /output/osv-scanner.sarif
+    # Where each crate sits in its Cargo.lock, and whether it came from git:
+    # deps.dev matches on name and version alone, so a crate built from a fork
+    # is "yanked" whenever crates.io yanked the same release.
+    RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
+
+    # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
+    # MEDIUM - see scripts/osv.jq.
+    RUN jq -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
+            --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
+            /output/osv.json > /output/osv-scanner.sarif
 
     SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif
 

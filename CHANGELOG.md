@@ -11,6 +11,24 @@ and this project adheres to
 
 ### Added
 
+- **Yanked and deprecated packages are findings.** osv-scanner
+  now runs with `--x-flag-deprecated-packages`, and a version the
+  registry has withdrawn - yanked on crates.io or PyPI,
+  deprecated or unpublished on npm - is reported as
+  `deprecated-package` at MEDIUM, on the lockfile line that names
+  it. A yank usually follows a defect found before any advisory
+  was filed, so nothing else here could name it. A crate from a
+  git fork is not reported when crates.io merely yanked the
+  release sharing its name and version. Excuse a deliberate pin
+  with `[[PackageOverrides]]` in `osv-scanner.toml`
+- **osv-scanner's SARIF is written here, from its JSON report.**
+  Upstream's `--format sarif` drops a deprecated package that has
+  no vulnerability (google/osv-scanner#3164). `scripts/osv.jq`
+  now produces the SARIF from `--format json` with the same rule
+  ids, messages and scores as upstream, so existing code-scanning
+  alerts keep their identity; a RUSTSEC+GHSA pair that upstream
+  reported twice is reported once. One scan, not two
+
 - **zizmor runs online, always.** Its `known-vulnerable-actions`
   audit is the only check here on the actions a workflow `uses:` -
   `tj-actions/changed-files@v35` passed every other scanner. Uses

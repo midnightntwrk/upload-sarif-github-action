@@ -16,7 +16,9 @@ repos).
   only scanner here that checks the actions a workflow `uses:`
   against GHSAs
 - **[osv-scanner]** - Known-vulnerable *and known-malicious*
-  packages in lockfiles (OSV's `MAL-*` feed, which Trivy lacks)
+  packages in lockfiles (OSV's `MAL-*` feed, which Trivy lacks),
+  plus versions yanked from crates.io or PyPI and deprecated or
+  unpublished on npm (deps.dev), which carry no advisory id
 
 Each scanner can be skipped individually via a
 `skip_<scanner>_scan` input.
@@ -110,7 +112,7 @@ claim.
 | opengrep | level × confidence | `error`+high → CRITICAL, +medium → HIGH, +low → MEDIUM; `warning` → LOW | CRITICAL |
 | zizmor | per-finding level | `error` → CRITICAL, `warning` → MEDIUM, `note` → LOW | CRITICAL |
 | scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM, `note` → NOTE | HIGH |
-| osv-scanner | rule CVSS; `MAL-*` id | `MAL-*` → CRITICAL; CVSS ≥9 CRITICAL, ≥7 HIGH, ≥4 MEDIUM, else LOW | CRITICAL |
+| osv-scanner | group CVSS; `MAL-*` id; deprecated flag | `MAL-*` → CRITICAL; CVSS ≥9 CRITICAL, ≥7 HIGH, ≥4 MEDIUM, else LOW; yanked/deprecated → MEDIUM | CRITICAL |
 | others | level only | `error` → HIGH, `warning` → MEDIUM, `note` → LOW | HIGH |
 
 **opengrep needs the confidence tag.** `error` alone covers
@@ -251,6 +253,32 @@ manifest. Aliases of an ignored id are ignored too.
 A `MAL-*` id is malware, not a flaw. Treat it like a leaked
 credential: remove the dependency and assume anything that
 installed it is compromised, rather than ignore it.
+
+#### Yanked and deprecated packages
+
+A version the registry has withdrawn - yanked on crates.io or
+PyPI, deprecated or unpublished on npm - is reported as
+`deprecated-package` at MEDIUM, on the lockfile line that names
+it. There is no advisory id to ignore: a yank usually follows a
+defect found *before* anyone filed one, which is why it is
+reported at all. The fix is a version that is still published.
+A deliberate pin is excused per package, with a reason:
+
+```toml
+[[PackageOverrides]]
+name = "spin"
+version = "0.9.8"
+ecosystem = "crates.io"
+ignore = true
+effectiveUntil = 2026-12-31
+reason = "0.9.9 needs MSRV 1.80; pinned until the toolchain bump lands"
+```
+
+The deprecation data is deps.dev's and is keyed on name and
+version alone. A crate built from a git fork is not reported
+when crates.io merely yanked the release of the same name and
+version: the action reads `source =` from `Cargo.lock` to tell
+them apart.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as
