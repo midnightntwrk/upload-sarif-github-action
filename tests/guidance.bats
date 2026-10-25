@@ -60,3 +60,15 @@ one_high() {
     done
     [[ "$section" == *"never"* ]]
 }
+
+# Field names are not enough to write a waiver from; the guide points at the
+# README's copy-ready examples, and every README anchor it uses must exist.
+@test "the guide links README sections that exist, for the waiver syntax" {
+    section="$(awk '/^## Fixing a failed scan$/ {p=1; next} /^## / {p=0} p' "$ROOT/AGENTS.md")"
+    anchors="$(grep -o 'README.md#[a-z0-9-]*' <<<"$section" | sed 's/^README.md#//' | sort -u)"
+    [ -n "$anchors" ]
+    slugs="$(grep '^#\{2,4\} ' "$ROOT/README.md" | sed 's/^#* //; s/[`.—#]//g' | tr 'A-Z ' 'a-z-')"
+    while read -r a; do
+        grep -qx "$a" <<<"$slugs" || { echo "no README heading for anchor: $a"; return 1; }
+    done <<<"$anchors"
+}

@@ -40,6 +40,12 @@ Do not raise `fail_severity`, turn `differential_gate` off, or set
 `skip_<scanner>_scan` to pass a PR. Those are repository policy, owned by the
 people who set them; propose the change to them separately.
 
+Copy-ready examples of every waiver file above are in the README under
+[Per-tool calibration](README.md#per-tool-calibration); the
+`osv-scanner.toml` ones, including `PackageOverrides` for yanked packages and
+licences, are under
+[osv-scanner and scorecard](README.md#osv-scanner-and-scorecard--osv-scannertoml).
+
 Verify before pushing: the waiver must clear the **gate**, not only GitHub's
 Security tab - see the next section. `jq '.runs[].results[] | {ruleId,
 suppressions}' scan_reports/<tool>.sarif` shows what the scanner actually
