@@ -25,7 +25,7 @@ APT_INSTALL:
 # read this path for TLS.
 ca-certs:
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
     SAVE ARTIFACT /etc/ssl/certs/ca-certificates.crt
 
 # Static jq, the same binary in every scanner image and in +test, so the
@@ -33,7 +33,7 @@ ca-certs:
 # attestations (ci.yml at the release tag); 1.7.1 did not.
 jq-bin:
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
     # renovate: datasource=github-releases packageName=jqlang/jq extractVersion=^jq-(?<version>.+)$
     ARG JQ_VERSION=1.8.2
     ARG TARGETARCH
@@ -98,7 +98,7 @@ scan:
 bats-bin:
     # Hash-pinned like every other tool here; the tarball is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
     # renovate: datasource=github-releases packageName=bats-core/bats-core
     ARG BATS_VERSION=v1.14.0
     WORKDIR /tmp
@@ -132,7 +132,7 @@ test:
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
     ARG OPENGREP_VERSION=v1.32.0
@@ -174,7 +174,7 @@ opengrep:
 scorecard-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
     # renovate: datasource=github-releases packageName=ossf/scorecard
     ARG SCORECARD_VERSION=5.6.0
     ARG TARGETARCH
@@ -299,7 +299,7 @@ checkov:
 trivy-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
     ARG TRIVY_VERSION=0.76.1
@@ -351,7 +351,7 @@ osv-bin:
     # Tiny downloader stage; hash check is the trust anchor. The release ships a
     # bare binary, no tarball.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 
     # renovate: datasource=github-releases packageName=google/osv-scanner
     ARG OSV_SCANNER_VERSION=v2.7.0
@@ -410,7 +410,7 @@ osv:
 gitleaks-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 
     # renovate: datasource=github-releases packageName=gitleaks/gitleaks
     ARG GITLEAKS_VERSION=8.30.1
@@ -471,7 +471,7 @@ zizmor-bin:
     # Hash check is the trust anchor; TLS validation is redundant
     # (curl -k), and zizmor itself runs --offline at scan time.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
     ARG ZIZMOR_VERSION=v1.31.1
