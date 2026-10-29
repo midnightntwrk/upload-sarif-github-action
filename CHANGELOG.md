@@ -44,12 +44,14 @@ and this project adheres to
 
 ### Changed
 
-- **`fail_severity` defaults to `high`, was `critical`.** A HIGH
-  CVE in a lockfile, an opengrep `error` at medium confidence or
-  a scorecard check scoring 0 now fails a repository that sets
-  nothing. Only trivy and opengrep ever emit CRITICAL, so the old
-  default gated two tools out of seven. Keep the old behaviour
-  with `fail_severity: critical`
+- **`fail_severity` defaults to `high`, was `critical`.** CRITICAL
+  is the rarest band: CVSS 9.0 and up (trivy, osv-scanner), a
+  `MAL-*` package, a committed secret, opengrep `error` at high
+  confidence, zizmor `error`. checkov and scorecard never reach
+  it, so at `critical` neither gated at all, and a CVSS 7.0-8.9
+  CVE - the band most exploited advisories land in - passed. A
+  repository that sets nothing now fails on those. Keep the old
+  behaviour with `fail_severity: critical`
 - **A scorecard check that scores 10 is not reported.**
   `no binaries found in the repo`, `0 existing vulnerabilities
   detected` and the like no longer appear as `NOTE` rows. 8 or 9
