@@ -127,6 +127,8 @@ test:
     # A test input, not documentation: the suite asserts that the anchor printed
     # in a build failure resolves to a heading that actually exists.
     COPY README.md /work/README.md
+    # The shipped default is read from action.yml, never restated in a test.
+    COPY action.yml /work/action.yml
     RUN /opt/bats/bin/bats --print-output-on-failure tests/
 
 opengrep-bin:

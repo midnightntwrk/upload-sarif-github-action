@@ -17,7 +17,7 @@ inputs:
   fail_severity:
     description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
-    default: "critical"
+    default: "high"
   differential_gate:
     description: >-
       Set to 'true' to re-scan the PR's target branch when the severity gate

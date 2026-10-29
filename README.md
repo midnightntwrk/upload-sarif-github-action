@@ -60,7 +60,7 @@ All inputs are optional.
 
 | Input                 | Description                     | Default    |
 | --------------------- | ------------------------------- | ---------- |
-| `fail_severity`       | Min severity to fail CI         | `critical` |
+| `fail_severity`       | Min severity to fail CI         | `high`     |
 | `differential_gate`   | `true` compares against target  | `false`    |
 | `scorecard_checks`    | Scorecard checks to run (CSV)   | see below  |
 | `skip_opengrep_scan`  | `true` skips OpenGrep (SAST)    | `false`    |
@@ -150,7 +150,7 @@ A severity outside the known set (Trivy `UNKNOWN`, SARIF
 ### Secrets always fail the build
 
 A committed secret fails the build at **every** `fail_severity`,
-including the `critical` default. gitleaks assigns no severity
+including the `high` default. gitleaks assigns no severity
 of its own, so the action stamps its findings `CRITICAL`
 before they reach the gate — a leaked credential is not a
 point on a severity scale.
