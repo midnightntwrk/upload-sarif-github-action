@@ -76,6 +76,32 @@ JSON
     [ "$output" = "[]" ]
 }
 
+# npm-shrinkwrap.json is the same format and osv-scanner reads it too.
+@test "npm-shrinkwrap.json is indexed like package-lock.json" {
+    lockfile
+    mv "$TMP/js/package-lock.json" "$TMP/js/npm-shrinkwrap.json"
+    run index
+    [ "$(jq -r 'map(select(.name == "fsevents")) | .[0] | [.path, .optional] | @tsv' <<<"$output")" = "$(printf 'js/npm-shrinkwrap.json\ttrue')" ]
+}
+
+# Two repositories in the fleet indent their lockfiles with tabs; a hand-edited
+# one may put the brace on the next line. The entry is still found, and so is
+# its line.
+@test "tab indentation and a brace on the next line still give the entry's line" {
+    printf '{\n\t"packages": {\n\t\t"node_modules/a": {\n\t\t\t"version": "1.0.0"\n\t\t},\n\t\t"node_modules/b"\n\t\t: { "version": "2.0.0", "dev": true }\n\t}\n}\n' > "$TMP/js/package-lock.json"
+    run index
+    [ "$status" -eq 0 ]
+    [ "$(jq -r 'map(select(.name == "a")) | .[0].line' <<<"$output")" = 3 ]
+    [ "$(jq -r 'map(select(.name == "b")) | .[0] | [.line, .dev] | @tsv' <<<"$output")" = "$(printf '6\ttrue')" ]
+}
+
+# A flag that is not the boolean true is not set, whatever jq thinks of it.
+@test "only the boolean true sets a flag" {
+    echo '{"packages": {"node_modules/a": {"version": "1.0.0", "dev": "false", "optional": 1}}}' > "$TMP/js/package-lock.json"
+    run index
+    [ "$(jq -r '.[0] | [.dev, .optional, .devOptional] | @tsv' <<<"$output")" = "$(printf 'false\tfalse\tfalse')" ]
+}
+
 @test "a lockfile under node_modules is not indexed" {
     mkdir -p "$TMP/js/node_modules/x"
     echo '{"packages": {"node_modules/y": {"version": "1.0.0"}}}' > "$TMP/js/node_modules/x/package-lock.json"

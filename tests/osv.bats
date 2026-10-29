@@ -364,6 +364,8 @@ licensed_convert() {
     [ "$(npm_flags '"dev":false,"optional":true,"devOptional":false' '["optional"]')" = 1 ]
     [ "$(npm_flags '"dev":false,"optional":false,"devOptional":false' '[]')" = 1 ]
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
+    # Only the boolean true is the dev flag; a string is truthy in jq and must not skip.
+    [ "$(npm_flags '"dev":"false","optional":false,"devOptional":false' '[]')" = 1 ]
 }
 
 @test "an unknown licence on a registry package is a license-unknown at LOW" {

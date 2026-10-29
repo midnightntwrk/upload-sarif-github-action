@@ -176,7 +176,7 @@ def dev_only: (.dependency_groups // []) | (index("dev") != null) and (index("op
 # With the lockfile's flags (scripts/npm-lock-packages.sh) the answer is exact:
 # `dev` is set for the dev-only and the dev+optional states, and for neither of
 # the two that ship (optional, devOptional).
-def ships($flags): if $flags != null then ($flags.dev | not) else (dev_only | not) end;
+def ships($flags): if $flags != null then ($flags.dev == true | not) else (dev_only | not) end;
 
 # deps.dev's "could not tell", as a whole-expression placeholder.
 def licence_unknown: length == 0 or any(.[]; ascii_downcase | . == "unknown" or . == "non-standard");

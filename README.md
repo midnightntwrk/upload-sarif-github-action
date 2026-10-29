@@ -316,10 +316,10 @@ platform binaries) is dev: `package-lock.json` marks it
 `dev` + `optional`, and the action reads the lockfile's own
 flags rather than osv-scanner's groups, which fold that state
 into the shipped `devOptional` one. The lockfile has to mark
-the dev tree, though - `package-lock.json` does, `yarn.lock`,
-`pnpm-lock.yaml`, `bun.lock` and `Cargo.lock` do not, so a
-repository on those sees its dev tree too and excuses what it
-must.
+the dev tree, though - `package-lock.json` and
+`npm-shrinkwrap.json` do, `yarn.lock`, `pnpm-lock.yaml`,
+`bun.lock` and `Cargo.lock` do not, so a repository on those
+sees its dev tree too and excuses what it must.
 
 Per-package waivers go in `osv-scanner.toml`, beside the
 lockfile:
