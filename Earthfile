@@ -385,7 +385,7 @@ osv:
     RUN useradd -m -r -s /usr/sbin/nologin scanner
     COPY +user-source/src /src
     COPY scripts/osv.jq scripts/spdx.jq scripts/license-allowlist.txt /scripts/
-    COPY scripts/cargo-lock-packages.sh /scripts/cargo-lock-packages.sh
+    COPY scripts/cargo-lock-packages.sh scripts/npm-lock-packages.sh /scripts/
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
     # SPDX allowlist for the licence rules: `default` is scripts/license-allowlist.txt
@@ -427,11 +427,16 @@ osv:
     # deps.dev matches on name and version alone, so a crate built from a fork
     # is "yanked" whenever crates.io yanked the same release.
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
+    # Where each npm package sits in its package-lock.json and the lockfile's
+    # own dev/optional/devOptional flags: osv-scanner's groups fold "optional
+    # dependency of a dev dependency" into "devOptional", and only one ships.
+    RUN bash /scripts/npm-lock-packages.sh /src > /output/npm-lock-packages.json
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
     # MEDIUM, a licence outside the allowlist HIGH, an undeterminable licence
     # LOW - see scripts/osv.jq.
     RUN jq -L /scripts -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
+            --slurpfile npm /output/npm-lock-packages.json \
             --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
             --arg licenses "$LICENSES_ALLOWLIST" --rawfile default_licenses /scripts/license-allowlist.txt \
             /output/osv.json > /output/osv-scanner.sarif

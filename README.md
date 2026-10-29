@@ -310,9 +310,13 @@ read as the modern spellings.
 
 Dev dependencies are never licence findings: nobody ships
 them. Optional dependencies are checked, because npm installs
-one whenever it can (`fsevents`, the esbuild platform
-binaries), so it ships. The lockfile has to mark the dev tree,
-though - `package-lock.json` does, `yarn.lock`,
+one whenever it can (`fsevents`, `detect-libc`), so it ships.
+An optional dependency of a dev dependency (the esbuild
+platform binaries) is dev: `package-lock.json` marks it
+`dev` + `optional`, and the action reads the lockfile's own
+flags rather than osv-scanner's groups, which fold that state
+into the shipped `devOptional` one. The lockfile has to mark
+the dev tree, though - `package-lock.json` does, `yarn.lock`,
 `pnpm-lock.yaml`, `bun.lock` and `Cargo.lock` do not, so a
 repository on those sees its dev tree too and excuses what it
 must.

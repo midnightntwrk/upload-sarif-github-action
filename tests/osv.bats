@@ -297,9 +297,13 @@ licensed() {
         > "$TMP/osv.json"
 }
 
-# licensed_convert <allowlist> -- convert with the Cargo.lock index and that allowlist
+# npm_packages <json array> -- the package-lock.json index (scripts/npm-lock-packages.sh)
+npm_packages() { printf '%s\n' "$1" > "$TMP/npm.json"; }
+
+# licensed_convert <allowlist> -- convert with the lockfile indexes and that allowlist
 licensed_convert() {
-    convert --slurpfile packages "$TMP/pkgs.json" --arg licenses "$1"
+    [ -f "$TMP/npm.json" ] || npm_packages '[]'
+    convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" --arg licenses "$1"
 }
 
 @test "a banned licence is a license-violation at HIGH" {
@@ -339,6 +343,27 @@ licensed_convert() {
     licensed /src/js/package-lock.json npm smoldot 2.0.0 '["GPL-3.0-only"]' '["dev", "optional"]'
     licensed_convert "MIT"
     [ "$(result .ruleId)" = license-violation ]
+}
+
+# osv-scanner's groups cannot tell `dev` + `optional` (an optional dependency
+# of a dev dependency: an esbuild platform binary, never shipped) from
+# `devOptional` (shipped whenever npm can install it). The lockfile can, so
+# when its index is given the lockfile's flags decide: anything on the dev
+# flag is skipped, devOptional and optional are checked.
+@test "with the package-lock index, the lockfile's flags decide what ships" {
+    npm_flags() {
+        npm_packages "[{\"path\":\"js/package-lock.json\",\"name\":\"p\",\"version\":\"1.0.0\",\"line\":7,$1}]"
+        licensed /src/js/package-lock.json npm p 1.0.0 '["GPL-3.0-only"]' "$2"
+        licensed_convert "MIT"
+        sarif '.runs[0].results | length'
+    }
+    packages '[]'
+    [ "$(npm_flags '"dev":true,"optional":false,"devOptional":false' '["dev"]')" = 0 ]
+    [ "$(npm_flags '"dev":true,"optional":true,"devOptional":false' '["dev","optional"]')" = 0 ]
+    [ "$(npm_flags '"dev":false,"optional":false,"devOptional":true' '["dev","optional"]')" = 1 ]
+    [ "$(npm_flags '"dev":false,"optional":true,"devOptional":false' '["optional"]')" = 1 ]
+    [ "$(npm_flags '"dev":false,"optional":false,"devOptional":false' '[]')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
 }
 
 @test "an unknown licence on a registry package is a license-unknown at LOW" {

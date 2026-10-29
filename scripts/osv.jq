@@ -1,7 +1,8 @@
 # osv-scanner JSON -> SARIF, with the gate's severities stamped on.
 #
 #   jq -L scripts -f osv.jq [--slurpfile packages cargo-lock-packages.json] \
-#       [--arg version 2.7.0] [--arg licenses "MIT,Apache-2.0,..."] osv.json
+#       [--slurpfile npm npm-lock-packages.json] [--arg version 2.7.0] \
+#       [--arg licenses "MIT,Apache-2.0,..."] osv.json
 #
 # Why not osv-scanner's own `--format sarif`: it drops a deprecated package that
 # has no vulnerability (google/osv-scanner#3164), and a yanked crate with no
@@ -42,7 +43,11 @@
 #               `license-unknown`, LOW, and only for a package from a public
 #               registry - deps.dev knows nothing of a workspace member, a
 #               git dependency or a local npm package. Dev-only packages
-#               are skipped: nobody ships them. Optional ones ship.
+#               are skipped: nobody ships them. Optional ones ship. With
+#               the package-lock.json index the lockfile's own flags
+#               decide, since osv-scanner's groups cannot tell an optional
+#               dependency of a dev dependency (not shipped) from a
+#               devOptional one (shipped).
 #   neither     no score on the rule: the plain `warning` reading applies.
 
 include "spdx";
@@ -168,6 +173,11 @@ def deprecated_results($packages):
 # groups and ships with the optional path.
 def dev_only: (.dependency_groups // []) | (index("dev") != null) and (index("optional") == null);
 
+# With the lockfile's flags (scripts/npm-lock-packages.sh) the answer is exact:
+# `dev` is set for the dev-only and the dev+optional states, and for neither of
+# the two that ship (optional, devOptional).
+def ships($flags): if $flags != null then ($flags.dev | not) else (dev_only | not) end;
+
 # deps.dev's "could not tell", as a whole-expression placeholder.
 def licence_unknown: length == 0 or any(.[]; ascii_downcase | . == "unknown" or . == "non-standard");
 
@@ -190,13 +200,16 @@ def licence_rules($list):
           help: {text: "Allowed: \($shown)"},
           helpUri: "https://docs.deps.dev/faq/#how-are-licenses-determined" } ];
 
-def licence_results($list; $packages):
+def licence_results($list; $packages; $npm):
     if $list == "" or $list == "none" then [] else
     ($list | allowlist) as $al
     | ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
+    | ( $npm | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $nindex
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
-        | (.packages // [])[] | select(dev_only | not)
+        | (.packages // [])[]
+        | $nindex["\($path)|\(.package.name)|\(.package.version)"] as $flags
+        | select(ships($flags))
         # An array of strings by schema; anything else is "could not tell", not a crash.
         | .package as $pk
         | ((.licenses // []) | if type == "array" then . else [.] end
@@ -208,7 +221,7 @@ def licence_results($list; $packages):
            else $pk.ecosystem != "GIT" and (($pk.purl // "") | test("source=LOCAL") | not) end) as $registry
         | { ruleId: null, level: null, properties: {},
             locations: [{physicalLocation: {artifactLocation: {uri: $path},
-                                            region: {startLine: ($known.line // 1)}}}] }
+                                            region: {startLine: ($known.line // $flags.line // 1)}}}] }
           + ( if ($definite | length) > 0 and ($definite | package_allowed($al) | not) then
                   { ruleId: "license-violation", level: "error", properties: {severity: "HIGH"},
                     message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)) is licensed "
@@ -227,6 +240,7 @@ def licence_results($list; $packages):
 # --- assemble -----------------------------------------------------------------
 
 ($ARGS.named.packages // [] | .[0] // []) as $packages
+| ($ARGS.named.npm // [] | .[0] // []) as $npm
 | ($ARGS.named.licenses // ""
    | if . == "default" then
          ($ARGS.named.default_licenses // "" | split("\n")
@@ -234,7 +248,7 @@ def licence_results($list; $packages):
      else . end) as $licences
 | hits as $hits
 | deprecated_results($packages) as $deprecated
-| licence_results($licences; $packages) as $licence
+| licence_results($licences; $packages; $npm) as $licence
 | ($hits | group_by(.id) | map(vuln_rule(.))) as $vuln_rules
 | ($vuln_rules
    + (if ($deprecated | length) > 0 then [deprecated_rule] else [] end)

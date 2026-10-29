@@ -33,7 +33,9 @@ and this project adheres to
   spellings - because osv-scanner's own allowlist rejects any
   `WITH` form and never matches one against its base. Dev-only
   packages are skipped where the lockfile marks them; optional
-  ones ship, so they are checked.
+  ones ship, so they are checked, read from `package-lock.json`'s
+  own flags because osv-scanner's groups cannot tell an optional
+  dependency of a dev dependency from a `devOptional` one.
   `none` turns the rules off. Across 64 midnightntwrk
   repositories the default flags 336 violations, almost all
   `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`
