@@ -308,11 +308,14 @@ read as the modern spellings.
   skipped, since deps.dev knows nothing about those. Read the
   package's own LICENSE and record what you found.
 
-Dev and optional dependencies are never licence findings:
-nobody ships them. The lockfile has to say so, though -
-`package-lock.json` does, `yarn.lock`, `pnpm-lock.yaml`,
-`bun.lock` and `Cargo.lock` do not, so a repository on those
-sees its dev tree too and excuses what it must.
+Dev dependencies are never licence findings: nobody ships
+them. Optional dependencies are checked, because npm installs
+one whenever it can (`fsevents`, the esbuild platform
+binaries), so it ships. The lockfile has to mark the dev tree,
+though - `package-lock.json` does, `yarn.lock`,
+`pnpm-lock.yaml`, `bun.lock` and `Cargo.lock` do not, so a
+repository on those sees its dev tree too and excuses what it
+must.
 
 Per-package waivers go in `osv-scanner.toml`, beside the
 lockfile:

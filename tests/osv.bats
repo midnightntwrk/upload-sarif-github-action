@@ -281,9 +281,9 @@ stamped() {
 # With --licenses --all-packages every package carries deps.dev's licence
 # expressions. scripts/spdx.jq decides whether an allowlist (--arg licenses)
 # satisfies them; a package that fails is a `license-violation` (HIGH), one
-# whose licence deps.dev could not tell is a `license-unknown` (LOW). Dev and
-# optional packages are nobody's compliance problem and are skipped, as is an
-# unknown licence on anything not from a public registry.
+# whose licence deps.dev could not tell is a `license-unknown` (LOW). Dev-only
+# packages are nobody's compliance problem and are skipped, as is an unknown
+# licence on anything not from a public registry.
 
 # licensed <lockfile path> <ecosystem> <name> <version> <licence json array> [<groups json array>]
 licensed() {
@@ -323,14 +323,22 @@ licensed_convert() {
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
-@test "a dev or optional package is never a licence finding" {
+# npm installs an optional dependency whenever it can, so it ships: fsevents,
+# the esbuild platform binaries. Only a package reachable through dev
+# dependencies alone is nobody's compliance problem. package-lock.json marks a
+# package on both a dev path and an optional path `devOptional`, which
+# osv-scanner reports as both groups: it ships with the optional one.
+@test "a dev-only package is never a licence finding; an optional one is" {
     licensed /src/js/package-lock.json npm k6 0.0.0 '["AGPL-3.0"]' '["dev"]'
     packages '[]'
     licensed_convert "MIT"
     [ "$(sarif '.runs[0].results | length')" = 0 ]
     licensed /src/js/package-lock.json npm @substrate/connect 0.8.11 '["GPL-3.0-only"]' '["optional"]'
     licensed_convert "MIT"
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    [ "$(result .ruleId)" = license-violation ]
+    licensed /src/js/package-lock.json npm smoldot 2.0.0 '["GPL-3.0-only"]' '["dev", "optional"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
 }
 
 @test "an unknown licence on a registry package is a license-unknown at LOW" {

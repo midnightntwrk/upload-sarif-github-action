@@ -31,8 +31,9 @@ and this project adheres to
   polkadot-sdk's `GPL-3.0-or-later WITH Classpath-exception-2.0`. SPDX expressions are evaluated in
   `scripts/spdx.jq` - OR, AND, WITH, parentheses, legacy
   spellings - because osv-scanner's own allowlist rejects any
-  `WITH` form and never matches one against its base. Dev and
-  optional packages are skipped where the lockfile marks them.
+  `WITH` form and never matches one against its base. Dev-only
+  packages are skipped where the lockfile marks them; optional
+  ones ship, so they are checked.
   `none` turns the rules off. Across 64 midnightntwrk
   repositories the default flags 336 violations, almost all
   `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`

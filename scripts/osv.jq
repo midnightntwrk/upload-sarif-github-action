@@ -41,8 +41,8 @@
 #               (UNKNOWN, non-standard, nothing) is a
 #               `license-unknown`, LOW, and only for a package from a public
 #               registry - deps.dev knows nothing of a workspace member, a
-#               git dependency or a local npm package. Dev and optional
-#               packages are skipped: nobody ships them.
+#               git dependency or a local npm package. Dev-only packages
+#               are skipped: nobody ships them. Optional ones ship.
 #   neither     no score on the rule: the plain `warning` reading applies.
 
 include "spdx";
@@ -161,7 +161,12 @@ def deprecated_results($packages):
 
 # --- licences -----------------------------------------------------------------
 
-def dev_or_optional: (.dependency_groups // []) | any(. == "dev" or . == "optional");
+# npm installs an optional dependency whenever it can, so it ships (fsevents,
+# the esbuild platform binaries); only a package reached through dev
+# dependencies alone does not. package-lock.json's `devOptional` - on a dev
+# path and an optional path, never a plain production one - arrives as both
+# groups and ships with the optional path.
+def dev_only: (.dependency_groups // []) | (index("dev") != null) and (index("optional") == null);
 
 # deps.dev's "could not tell", as a whole-expression placeholder.
 def licence_unknown: length == 0 or any(.[]; ascii_downcase | . == "unknown" or . == "non-standard");
@@ -191,7 +196,7 @@ def licence_results($list; $packages):
     | ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
-        | (.packages // [])[] | select(dev_or_optional | not)
+        | (.packages // [])[] | select(dev_only | not)
         # An array of strings by schema; anything else is "could not tell", not a crash.
         | .package as $pk
         | ((.licenses // []) | if type == "array" then . else [.] end
