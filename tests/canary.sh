@@ -67,9 +67,14 @@ plant_defects() {
     # matches nothing against it.
     # Beside it, request@2.88.2: deprecated on npm, no advisory - the
     # deprecated-package rule is the only thing that can name it.
+    # Licences, three GPL-3.0 packages the fleet really carries: scale-codec
+    # ships and must be reported; util-internal-hex is dev-only and
+    # @substrate/connect is an optional dependency of a dev dependency - npm's
+    # `dev` + `optional` - and neither ships. Pretty-printed so each entry has
+    # a line of its own to point at.
     mkdir -p "$d/js"
-    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1","request":"2.88.2"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"},"node_modules/request":{"version":"2.88.2","resolved":"https://registry.npmjs.org/request/-/request-2.88.2.tgz"}}}' \
-        > "$d/js/package-lock.json"
+    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1","request":"2.88.2","@subsquid/scale-codec":"4.0.1"},"devDependencies":{"@subsquid/util-internal-hex":"1.2.3"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"},"node_modules/request":{"version":"2.88.2","resolved":"https://registry.npmjs.org/request/-/request-2.88.2.tgz"},"node_modules/@subsquid/scale-codec":{"version":"4.0.1","resolved":"https://registry.npmjs.org/@subsquid/scale-codec/-/scale-codec-4.0.1.tgz"},"node_modules/@subsquid/util-internal-hex":{"version":"1.2.3","resolved":"https://registry.npmjs.org/@subsquid/util-internal-hex/-/util-internal-hex-1.2.3.tgz","dev":true,"optionalDependencies":{"@substrate/connect":"0.8.11"}},"node_modules/@substrate/connect":{"version":"0.8.11","resolved":"https://registry.npmjs.org/@substrate/connect/-/connect-0.8.11.tgz","dev":true,"optional":true}}}' \
+        | jq . > "$d/js/package-lock.json"
 
     # osv-scanner, yanked crates: spin 0.9.8 is yanked on crates.io and has no
     # advisory. The second entry is yanked on crates.io too, but this lockfile
@@ -234,6 +239,7 @@ osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
 osv      |osv-scanner.sarif       |deprecated-package.*rust/Cargo\.lock |MEDIUM
 osv      |osv-scanner.sarif       |deprecated-package.*js/package-lock\.json |MEDIUM
 osv      |osv-scanner.sarif       |license-violation.*rust/Cargo\.lock |HIGH
+osv      |osv-scanner.sarif       |license-violation.*js/package-lock\.json |HIGH
 osv      |osv-scanner.sarif       |license-unknown.*rust/Cargo\.lock   |LOW
 EXPECTED
 
@@ -262,6 +268,34 @@ if [ "$(jq "[$dep | select(.message.text | contains(\"sp-api-proc-macro\"))] | l
 else
     no "sp-api-proc-macro from git is reported as yanked"
 fi
+
+# ---------------------------------------------------------------------------
+# npm licences: what ships is read from package-lock.json's own flags, because
+# osv-scanner's groups cannot tell an optional dependency of a dev dependency
+# (never installed in production) from a devOptional one (installed when it
+# can be). Three real GPL-3.0 packages: one ships, two do not.
+echo "== npm licences: the shipped package, on its own line, and only that one =="
+
+lic='.runs[].results[] | select(.ruleId == "license-violation")'
+if [ "$(jq "[$lic | select(.message.text | contains(\"@subsquid/scale-codec@4.0.1\"))] | length" "$osv")" -ge 1 ]; then
+    ok "@subsquid/scale-codec (production, GPL-3.0-or-later) is reported"
+else
+    no "@subsquid/scale-codec is not reported" "$(jq -c "[$lic | .message.text]" "$osv")"
+fi
+want="$(grep -n '"node_modules/@subsquid/scale-codec"' "$work/dirty/js/package-lock.json" | cut -d: -f1)"
+got="$(jq -r "[$lic | select(.message.text | contains(\"@subsquid/scale-codec@4.0.1\"))][0].locations[0].physicalLocation.region.startLine" "$osv")"
+if [ "$got" = "$want" ]; then
+    ok "and sits on the package's own line ($want)"
+else
+    no "@subsquid/scale-codec is placed on line $got, expected $want"
+fi
+for p in "@subsquid/util-internal-hex@1.2.3 (dev)" "@substrate/connect@0.8.11 (dev + optional)"; do
+    if [ "$(jq "[$lic | select(.message.text | contains(\"${p%% *}\"))] | length" "$osv")" = 0 ]; then
+        ok "${p} is not reported"
+    else
+        no "${p} is reported although it does not ship"
+    fi
+done
 
 # The calibration is policy, and policy that only exists in jq drifts. These
 # assert the ceilings hold against real scanner output, not hand-written SARIF:

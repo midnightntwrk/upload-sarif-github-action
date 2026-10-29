@@ -79,6 +79,12 @@ allowed() {
     [ "$(allowed "Apache-2.0" "Apache-2.0 WITH (" "Apache-2.0 WITH OR" "Apache-2.0 WITH" "Apache-2.0 WITH LLVM-exception")" = "false false false true" ]
 }
 
+# SPDX gives WITH a simple expression on its left - an identifier, never a
+# bracketed group. `(MIT) WITH x` is malformed, and malformed grants nothing.
+@test "WITH takes an identifier on its left, not a bracketed group" {
+    [ "$(allowed "MIT" "(MIT) WITH Classpath-exception-2.0" "(MIT OR Apache-2.0) WITH LLVM-exception" "MIT WITH LLVM-exception")" = "false false true" ]
+}
+
 # SPDX separates tokens with whitespace, not only the space character.
 @test "tabs and runs of whitespace separate tokens" {
     [ "$(allowed "MIT" "$(printf 'MIT\tOR  GPL-3.0-only')" "$(printf 'MIT\n AND\tApache-2.0')")" = "true false" ]

@@ -101,19 +101,9 @@ runs:
         GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: |
         # Written once and re-read by the differential gate's base scan, so the
-        # two passes cannot be given different scanners. Adding a scanner means
-        # editing this list only.
-        {
-          printf -- '--SCORECARD_CHECKS=%s\n'    "$SCORECARD_CHECKS"
-          printf -- '--SKIP_OPENGREP_SCAN=%s\n'  "$SKIP_OPENGREP_SCAN"
-          printf -- '--SKIP_SCORECARD_SCAN=%s\n' "$SKIP_SCORECARD_SCAN"
-          printf -- '--SKIP_CHECKOV_SCAN=%s\n'   "$SKIP_CHECKOV_SCAN"
-          printf -- '--SKIP_ZIZMOR_SCAN=%s\n'    "$SKIP_ZIZMOR_SCAN"
-          printf -- '--SKIP_TRIVY_SCAN=%s\n'     "$SKIP_TRIVY_SCAN"
-          printf -- '--SKIP_GITLEAKS_SCAN=%s\n'  "$SKIP_GITLEAKS_SCAN"
-          printf -- '--SKIP_OSV_SCAN=%s\n'       "$SKIP_OSV_SCAN"
-          printf -- '--LICENSES_ALLOWLIST=%s\n'  "$LICENSES_ALLOWLIST"
-        } > "${RUNNER_TEMP:-/tmp}/scan-flags"
+        # two passes cannot be given different scanners. The script refuses a
+        # value with a line break in it: one input is one flag.
+        "${{ github.action_path }}/scripts/scan-flags.sh" "${RUNNER_TEMP:-/tmp}/scan-flags"
         mapfile -t flags < "${RUNNER_TEMP:-/tmp}/scan-flags"
 
         /tmp/earth --secret GH_TOKEN "${{ github.action_path }}+scan" \

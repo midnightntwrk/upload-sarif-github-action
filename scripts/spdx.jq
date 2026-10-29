@@ -69,7 +69,10 @@ def parse_expr($al):
         atom as $a
         | if $a == null then null
           else . as [$t, $i]
-            | if ($t[$a[1]] // "" | ascii_downcase) == "with" then
+            # WITH's left side is a simple expression: an identifier, never a
+            # bracketed group (annex D). `(MIT) WITH x` is malformed.
+            | if ($t[$a[1]] // "" | ascii_downcase) == "with" and $t[$i] == "(" then null
+              elif ($t[$a[1]] // "" | ascii_downcase) == "with" then
                   # The exception has to be an identifier: `MIT WITH (` is broken,
                   # and a broken expression grants nothing, allowed base or not.
                   if $t[$a[1] + 1] == null or ($t[$a[1] + 1] | operator) then null
