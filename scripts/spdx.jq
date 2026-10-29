@@ -45,7 +45,9 @@ def allowlist:
     | map({key: ., value: true}) | from_entries;
 
 def tokens:
-    gsub("\\("; " ( ") | gsub("\\)"; " ) ") | split(" ") | map(select(length > 0));
+    gsub("\\("; " ( ") | gsub("\\)"; " ) ") | [splits("\\s+")] | map(select(length > 0));
+
+def operator: test("^(\\(|\\)|OR|AND|WITH)$"; "i");
 
 # Each parser takes [tokens, index] and returns [value, index], or null when
 # the input does not parse. `value` is true/false: allowed under $al.
@@ -55,7 +57,7 @@ def parse_expr($al):
         | if $t[$i] == "(" then
               ([$t, $i + 1] | parse_expr($al)) as $r
               | if $r == null or $t[$r[1]] != ")" then null else [$r[0], $r[1] + 1] end
-          elif $t[$i] == null or ($t[$i] | test("^(\\(|\\)|OR|AND|WITH)$"; "i")) then null
+          elif $t[$i] == null or ($t[$i] | operator) then null
           # deps.dev's placeholders for "could not tell": not licences, so an
           # allowlist cannot name them into existence.
           elif ($t[$i] | ascii_downcase) == "unknown" or ($t[$i] | ascii_downcase) == "non-standard" then [false, $i + 1]
@@ -67,9 +69,12 @@ def parse_expr($al):
         atom as $a
         | if $a == null then null
           else . as [$t, $i]
-            | if ($t[$a[1]] // "" | ascii_downcase) == "with" and $t[$a[1] + 1] != null then
-                  ([$t[$i], "with", $t[$a[1] + 1]] | map(normalise) | join(" ")) as $compound
-                  | [ ($a[0] or ($al[$compound] // false)), $a[1] + 2 ]
+            | if ($t[$a[1]] // "" | ascii_downcase) == "with" then
+                  # The exception has to be an identifier: `MIT WITH (` is broken,
+                  # and a broken expression grants nothing, allowed base or not.
+                  if $t[$a[1] + 1] == null or ($t[$a[1] + 1] | operator) then null
+                  else ([$t[$i], "with", $t[$a[1] + 1]] | map(normalise) | join(" ")) as $compound
+                       | [ ($a[0] or ($al[$compound] // false)), $a[1] + 2 ] end
               else $a end
           end;
     def and_:

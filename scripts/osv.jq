@@ -192,8 +192,10 @@ def licence_results($list; $packages):
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[] | select(dev_or_optional | not)
-        # Strings by schema; anything else is "could not tell", not a crash.
-        | .package as $pk | ((.licenses // []) | map(if type == "string" then . else "UNKNOWN" end)) as $lic
+        # An array of strings by schema; anything else is "could not tell", not a crash.
+        | .package as $pk
+        | ((.licenses // []) | if type == "array" then . else [.] end
+           | map(if type == "string" then . else "UNKNOWN" end)) as $lic
         | ($lic | map(select(ascii_downcase | . != "unknown" and . != "non-standard"))) as $definite
         | $index["\($path)|\($pk.name)|\($pk.version)"] as $known
         # Unindexed crates (no Cargo.lock index given) count as registry.

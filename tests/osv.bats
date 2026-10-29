@@ -359,12 +359,19 @@ licensed_convert() {
     [ "$(result .ruleId)" = license-unknown ]
 }
 
-# osv-scanner's schema says strings; a null must not take the whole scan down.
-@test "a null licence entry is treated as unknown, not as an error" {
+# osv-scanner's schema says an array of strings; neither a null entry nor a
+# bare string must take the whole scan down.
+@test "a null or non-array licence field is treated as unknown, not as an error" {
     licensed /src/js/package-lock.json npm c 1.0.0 '[null]'
     packages '[]'
     licensed_convert "MIT"
     [ "$(result .ruleId)" = license-unknown ]
+    licensed /src/js/package-lock.json npm d 1.0.0 '"UNKNOWN"'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+    licensed /src/js/package-lock.json npm e 1.0.0 '"GPL-3.0-only"'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
 }
 
 # deps.dev knows nothing about a workspace member, a git dependency or a local

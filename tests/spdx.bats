@@ -73,6 +73,17 @@ allowed() {
     [ "$(allowed "MIT" "MIT OR" "(MIT" "MIT AND AND Apache-2.0")" = "false false false" ]
 }
 
+# An allowed base allows its exceptions, but only when there is one: an
+# operator or a bracket after WITH is a broken expression, not a grant.
+@test "WITH needs an exception identifier, even on an allowed base" {
+    [ "$(allowed "Apache-2.0" "Apache-2.0 WITH (" "Apache-2.0 WITH OR" "Apache-2.0 WITH" "Apache-2.0 WITH LLVM-exception")" = "false false false true" ]
+}
+
+# SPDX separates tokens with whitespace, not only the space character.
+@test "tabs and runs of whitespace separate tokens" {
+    [ "$(allowed "MIT" "$(printf 'MIT\tOR  GPL-3.0-only')" "$(printf 'MIT\n AND\tApache-2.0')")" = "true false" ]
+}
+
 # deps.dev gives a list; every entry has to be satisfied.
 @test "a package with several expressions needs all of them allowed" {
     [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; ["MIT", "Apache-2.0 OR MIT"] | package_allowed("MIT" | allowlist)')" = true ]
