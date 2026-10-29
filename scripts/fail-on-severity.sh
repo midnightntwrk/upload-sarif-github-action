@@ -167,6 +167,14 @@ write_count "$count"
 
 if [ "$count" -gt 0 ]; then
     echo "$count finding(s) at or above severity $THRESHOLD."
+    # The reader - person or agent - is about to make this green. One link to
+    # the page that says how each kind of finding is fixed or excused, and
+    # which ones never are, beats a wiki nobody reads. Derived from the
+    # environment so a fork or GitHub Enterprise is not sent to github.com.
+    action_repo="${GITHUB_ACTION_REPOSITORY:-midnightntwrk/upload-sarif-github-action}"
+    server="${GITHUB_SERVER_URL:-https://github.com}"
+    echo "How to fix or excuse each kind, and which must never be excused:"
+    echo "  $server/$action_repo/blob/main/AGENTS.md#fixing-a-failed-scan"
     exit 1
 fi
 

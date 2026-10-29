@@ -1,6 +1,8 @@
 # osv-scanner JSON -> SARIF, with the gate's severities stamped on.
 #
-#   jq -f osv.jq [--slurpfile packages cargo-lock-packages.json] [--arg version 2.7.0] osv.json
+#   jq -L scripts -f osv.jq [--slurpfile packages cargo-lock-packages.json] \
+#       [--slurpfile npm npm-lock-packages.json] [--arg version 2.7.0] \
+#       [--arg licenses "MIT,Apache-2.0,..."] osv.json
 #
 # Why not osv-scanner's own `--format sarif`: it drops a deprecated package that
 # has no vulnerability (google/osv-scanner#3164), and a yanked crate with no
@@ -30,7 +32,25 @@
 #               Cargo.lock index says came from git is skipped: deps.dev
 #               matches on name and version alone, so a fork is "yanked"
 #               whenever crates.io yanked the same release.
+#   licences    with --arg licenses (an SPDX allowlist, or `default` for
+#               scripts/license-allowlist.txt passed as --rawfile
+#               default_licenses; "" or "none" turns this off) every
+#               package's expressions, as deps.dev reports
+#               them under --licenses --all-packages, go through spdx.jq.
+#               One that fails is a `license-violation`, HIGH, whatever else
+#               sits beside it in the list; one deps.dev could not tell
+#               (UNKNOWN, non-standard, nothing) is a
+#               `license-unknown`, LOW, and only for a package from a public
+#               registry - deps.dev knows nothing of a workspace member, a
+#               git dependency or a local npm package. Dev-only packages
+#               are skipped: nobody ships them. Optional ones ship. With
+#               the package-lock.json index the lockfile's own flags
+#               decide, since osv-scanner's groups cannot tell an optional
+#               dependency of a dev dependency (not shipped) from a
+#               devOptional one (shipped).
 #   neither     no score on the rule: the plain `warning` reading applies.
+
+include "spdx";
 
 def band:
     if   . >= 9 then "CRITICAL"
@@ -135,7 +155,7 @@ def deprecated_results($packages):
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[] | .package | select(.deprecated == true)
         | $index["\($path)|\(.name)|\(.version)"] as $known
-        | select(($known.git // false) | not)
+        | select(($known.source // "") != "git")
         | { ruleId: "deprecated-package", level: "warning",
             message: {text: ("Package '\(.name)@\(.version)' (\(.ecosystem)) is "
                 + "\(.ecosystem | registry_word) upstream: the registry no longer serves "
@@ -144,12 +164,100 @@ def deprecated_results($packages):
                 artifactLocation: {uri: $path},
                 region: {startLine: ($known.line // 1)}}}] } ];
 
+# --- licences -----------------------------------------------------------------
+
+# npm installs an optional dependency whenever it can, so it ships (fsevents,
+# the esbuild platform binaries); only a package reached through dev
+# dependencies alone does not. package-lock.json's `devOptional` - on a dev
+# path and an optional path, never a plain production one - arrives as both
+# groups and ships with the optional path.
+def dev_only: (.dependency_groups // []) | (index("dev") != null) and (index("optional") == null);
+
+# With the lockfile's flags (scripts/npm-lock-packages.sh) the answer is exact:
+# `dev` is set for the dev-only and the dev+optional states, and for neither of
+# the two that ship (optional, devOptional). One name@version can be installed
+# more than once in a lockfile - at the root for production and again under a
+# dev tool's node_modules - and osv-scanner reports it once, so $entries is
+# every install of it: the package ships if any of them does.
+def ships($entries): if $entries != null then any($entries[]; .dev != true) else (dev_only | not) end;
+def shipping_line($entries): [$entries[]? | select(.dev != true) | .line][0];
+
+# deps.dev's "could not tell", as a whole-expression placeholder.
+def licence_unknown: length == 0 or any(.[]; ascii_downcase | . == "unknown" or . == "non-standard");
+
+def licence_rules($list):
+    ($list | split(",") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0)) | join(", ")) as $shown
+    | [ { id: "license-violation",
+          name: "LicenseViolation",
+          shortDescription: {text: "Package licence is outside the allowlist"},
+          fullDescription: {text: ("The package's licence expression is not satisfied by the "
+              + "allowlist. Replace the dependency, or excuse this one package in osv-scanner.toml "
+              + "with [[PackageOverrides]] license.ignore = true and a reason.")},
+          help: {text: "Allowed: \($shown)"},
+          helpUri: "https://spdx.org/licenses/" },
+        { id: "license-unknown",
+          name: "LicenseUnknown",
+          shortDescription: {text: "Package licence could not be determined"},
+          fullDescription: {text: ("deps.dev reports no usable licence for this version (UNKNOWN or "
+              + "non-standard text). Read the package's own LICENSE and record the result in "
+              + "osv-scanner.toml with [[PackageOverrides]] license.override = [\"<SPDX id>\"].")},
+          help: {text: "Allowed: \($shown)"},
+          helpUri: "https://docs.deps.dev/faq/#how-are-licenses-determined" } ];
+
+def licence_results($list; $packages; $npm):
+    if $list == "" or $list == "none" then [] else
+    ($list | allowlist) as $al
+    | ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
+    | ( $npm | group_by("\(.path)|\(.name)|\(.version)")
+        | map({key: "\(.[0].path)|\(.[0].name)|\(.[0].version)", value: .}) | from_entries ) as $nindex
+    | [ (.results // [])[]
+        | (.source.path // "" | relpath) as $path
+        | (.packages // [])[]
+        | $nindex["\($path)|\(.package.name)|\(.package.version)"] as $installs
+        | select(ships($installs))
+        # An array of strings by schema; anything else is "could not tell", not a crash.
+        | .package as $pk
+        | ((.licenses // []) | if type == "array" then . else [.] end
+           | map(if type == "string" then . else "UNKNOWN" end)) as $lic
+        | ($lic | map(select(ascii_downcase | . != "unknown" and . != "non-standard"))) as $definite
+        | $index["\($path)|\($pk.name)|\($pk.version)"] as $known
+        # Unindexed crates (no Cargo.lock index given) count as registry.
+        | (if $pk.ecosystem == "crates.io" then ($known.source // "registry") == "registry"
+           else $pk.ecosystem != "GIT" and (($pk.purl // "") | test("source=LOCAL") | not) end) as $registry
+        | { ruleId: null, level: null, properties: {},
+            locations: [{physicalLocation: {artifactLocation: {uri: $path},
+                                            region: {startLine: ($known.line // shipping_line($installs) // 1)}}}] }
+          + ( if ($definite | length) > 0 and ($definite | package_allowed($al) | not) then
+                  { ruleId: "license-violation", level: "error", properties: {severity: "HIGH"},
+                    message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)) is licensed "
+                        + "'\($lic | join("; "))', which the allowlist does not permit.")} }
+              elif ($lic | licence_unknown) then
+                  if $registry then
+                      { ruleId: "license-unknown", level: "note", properties: {severity: "LOW"},
+                        message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)): "
+                            + "deps.dev reports no usable licence (\($lic | join(", ") | if . == "" then "none" else . end)). "
+                            + "Check the package's own LICENSE and record it in osv-scanner.toml.")} }
+                  else empty end
+              else empty
+              end ) ]
+    end;
+
 # --- assemble -----------------------------------------------------------------
 
-hits as $hits
-| deprecated_results($ARGS.named.packages // [] | .[0] // []) as $deprecated
+($ARGS.named.packages // [] | .[0] // []) as $packages
+| ($ARGS.named.npm // [] | .[0] // []) as $npm
+| ($ARGS.named.licenses // ""
+   | if . == "default" then
+         ($ARGS.named.default_licenses // "" | split("\n")
+          | map(sub("#.*"; "") | gsub("^\\s+|\\s+$"; "") | select(length > 0)) | join(","))
+     else . end) as $licences
+| hits as $hits
+| deprecated_results($packages) as $deprecated
+| licence_results($licences; $packages; $npm) as $licence
 | ($hits | group_by(.id) | map(vuln_rule(.))) as $vuln_rules
-| ($vuln_rules + (if ($deprecated | length) > 0 then [deprecated_rule] else [] end)) as $rules
+| ($vuln_rules
+   + (if ($deprecated | length) > 0 then [deprecated_rule] else [] end)
+   + (if ($licence | length) > 0 then licence_rules($licences) else [] end)) as $rules
 | ( [ $rules[] | select(.properties["security-severity"] != null)
       | { key: .id, value: (.properties["security-severity"] | tonumber) } ]
     | from_entries ) as $cvss
@@ -160,7 +268,7 @@ hits as $hits
                         informationUri: "https://github.com/google/osv-scanner",
                         rules: $rules }
                       + (if ($ARGS.named.version // "") != "" then {version: $ARGS.named.version} else {} end))},
-      results: ( [ $hits[] | vuln_result ] + $deprecated
+      results: ( [ $hits[] | vuln_result ] + $deprecated + $licence
                  | map( (.ruleId) as $id
                       | if .properties.severity != null then .
                         elif $cvss[$id] != null then .properties.severity = ($cvss[$id] | band)

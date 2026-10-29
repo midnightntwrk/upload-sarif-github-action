@@ -47,7 +47,7 @@ packages() { printf '%s\n' "$1" > "$TMP/pkgs.json"; }
 # convert [jq args...] -- $TMP/osv.json -> $TMP/r/osv.sarif
 convert() {
     mkdir -p "$TMP/r"
-    jq -f "$OSV_JQ" "$@" "$TMP/osv.json" > "$TMP/r/osv.sarif"
+    jq -L "$ROOT/scripts" -f "$OSV_JQ" "$@" "$TMP/osv.json" > "$TMP/r/osv.sarif"
 }
 
 # converted -- convert with the Cargo.lock index, as the Earthfile does
@@ -234,7 +234,7 @@ stamped() {
 
 @test "the result points at the crate's own line in Cargo.lock" {
     deprecated /src/rust/Cargo.lock crates.io spin 0.9.8
-    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"git":false}]'
+    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"registry"}]'
     converted
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
 }
@@ -244,7 +244,7 @@ stamped() {
 # Cargo.lock says where it really came from.
 @test "a git-sourced crate is not reported" {
     deprecated /src/Cargo.lock crates.io sp-api-proc-macro 15.0.0
-    packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"git":true}]'
+    packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"source":"git"}]'
     converted
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
@@ -274,4 +274,199 @@ stamped() {
     convert
     [ "$(result .ruleId)" = deprecated-package ]
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 1 ]
+}
+
+# --- licences -------------------------------------------------------------------
+#
+# With --licenses --all-packages every package carries deps.dev's licence
+# expressions. scripts/spdx.jq decides whether an allowlist (--arg licenses)
+# satisfies them; a package that fails is a `license-violation` (HIGH), one
+# whose licence deps.dev could not tell is a `license-unknown` (LOW). Dev-only
+# packages are nobody's compliance problem and are skipped, as is an unknown
+# licence on anything not from a public registry.
+
+# licensed <lockfile path> <ecosystem> <name> <version> <licence json array> [<groups json array>]
+licensed() {
+    jq -n --arg path "$1" --arg eco "$2" --arg name "$3" --arg ver "$4" \
+          --argjson lic "$5" --argjson groups "${6:-[]}" '
+        {results: [{source: {path: $path, type: "lockfile"},
+            packages: [{package: {name: $name, version: $ver, ecosystem: $eco,
+                                  purl: "pkg:x/\($name)@\($ver)?source=PUBLIC_REGISTRY"},
+                        licenses: $lic}
+                       + (if ($groups | length) > 0 then {dependency_groups: $groups} else {} end)]}]}' \
+        > "$TMP/osv.json"
+}
+
+# npm_packages <json array> -- the package-lock.json index (scripts/npm-lock-packages.sh)
+npm_packages() { printf '%s\n' "$1" > "$TMP/npm.json"; }
+
+# licensed_convert <allowlist> -- convert with the lockfile indexes and that allowlist
+licensed_convert() {
+    [ -f "$TMP/npm.json" ] || npm_packages '[]'
+    convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" --arg licenses "$1"
+}
+
+@test "a banned licence is a license-violation at HIGH" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    licensed_convert "MIT,Apache-2.0"
+    [ "$(result .ruleId)" = license-violation ]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
+        | jq -r '.hits[0].severity')" = HIGH ]
+    [[ "$(result .message.text)" == *"polkadot-primitives@18.0.0"* ]]
+    [[ "$(result .message.text)" == *"GPL-3.0-only"* ]]
+}
+
+@test "an allowed expression is not reported, exceptions and OR included" {
+    licensed /src/Cargo.lock crates.io sc-cli 0.60.0 '["GPL-3.0-or-later WITH Classpath-exception-2.0"]'
+    packages '[]'
+    licensed_convert "MIT,GPL-3.0-or-later WITH Classpath-exception-2.0"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/Cargo.lock crates.io serde 1.0.0 '["Apache-2.0 OR MIT"]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# npm installs an optional dependency whenever it can, so it ships: fsevents,
+# the esbuild platform binaries. Only a package reachable through dev
+# dependencies alone is nobody's compliance problem. package-lock.json marks a
+# package on both a dev path and an optional path `devOptional`, which
+# osv-scanner reports as both groups: it ships with the optional one.
+@test "a dev-only package is never a licence finding; an optional one is" {
+    licensed /src/js/package-lock.json npm k6 0.0.0 '["AGPL-3.0"]' '["dev"]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/js/package-lock.json npm @substrate/connect 0.8.11 '["GPL-3.0-only"]' '["optional"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+    licensed /src/js/package-lock.json npm smoldot 2.0.0 '["GPL-3.0-only"]' '["dev", "optional"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+}
+
+# osv-scanner's groups cannot tell `dev` + `optional` (an optional dependency
+# of a dev dependency: an esbuild platform binary, never shipped) from
+# `devOptional` (shipped whenever npm can install it). The lockfile can, so
+# when its index is given the lockfile's flags decide: anything on the dev
+# flag is skipped, devOptional and optional are checked.
+@test "with the package-lock index, the lockfile's flags decide what ships" {
+    npm_flags() {
+        npm_packages "[{\"path\":\"js/package-lock.json\",\"name\":\"p\",\"version\":\"1.0.0\",\"line\":7,$1}]"
+        licensed /src/js/package-lock.json npm p 1.0.0 '["GPL-3.0-only"]' "$2"
+        licensed_convert "MIT"
+        sarif '.runs[0].results | length'
+    }
+    packages '[]'
+    [ "$(npm_flags '"dev":true,"optional":false,"devOptional":false' '["dev"]')" = 0 ]
+    [ "$(npm_flags '"dev":true,"optional":true,"devOptional":false' '["dev","optional"]')" = 0 ]
+    [ "$(npm_flags '"dev":false,"optional":false,"devOptional":true' '["dev","optional"]')" = 1 ]
+    [ "$(npm_flags '"dev":false,"optional":true,"devOptional":false' '["optional"]')" = 1 ]
+    [ "$(npm_flags '"dev":false,"optional":false,"devOptional":false' '[]')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
+    # Only the boolean true is the dev flag; a string is truthy in jq and must not skip.
+    [ "$(npm_flags '"dev":"false","optional":false,"devOptional":false' '[]')" = 1 ]
+}
+
+# One name@version can be installed twice in one lockfile - at the root for
+# production and again under a dev tool's own node_modules. osv-scanner reports
+# it once; the index holds both entries, and the package ships if any of them
+# does. The line is a shipping entry's, whichever order the lockfile lists them.
+@test "a package installed for production and again under a dev tool ships" {
+    dup() {
+        npm_packages "[$1]"
+        licensed /src/js/package-lock.json npm dup 1.0.0 '["GPL-3.0-only"]' '[]'
+        licensed_convert "MIT"
+        printf '%s %s' "$(sarif '.runs[0].results | length')" "$(result .locations[0].physicalLocation.region.startLine)"
+    }
+    packages '[]'
+    prod='{"path":"js/package-lock.json","name":"dup","version":"1.0.0","line":5,"dev":false,"optional":false,"devOptional":false}'
+    dev='{"path":"js/package-lock.json","name":"dup","version":"1.0.0","line":40,"dev":true,"optional":false,"devOptional":false}'
+    [ "$(dup "$prod,$dev")" = "1 5" ]
+    [ "$(dup "$dev,$prod")" = "1 5" ]
+    [ "$(dup "$dev")" = "0 null" ]
+}
+
+@test "an unknown licence on a registry package is a license-unknown at LOW" {
+    licensed /src/Cargo.lock crates.io ring 0.16.20 '["non-standard"]'
+    packages '[{"path":"Cargo.lock","name":"ring","version":"0.16.20","line":5,"source":"registry"}]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 5 ]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
+        | jq -r '.hits[0].severity')" = LOW ]
+    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+}
+
+# deps.dev found one licence it could read and one it could not. The one it
+# read is the finding: an unknown beside a GPL must not soften it to LOW.
+@test "a banned licence beside an unknown one is still a violation" {
+    licensed /src/js/package-lock.json npm a 1.0.0 '["GPL-3.0-only", "UNKNOWN"]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .ruleId)" = license-violation ]
+    licensed /src/js/package-lock.json npm b 1.0.0 '["MIT", "UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+}
+
+# osv-scanner's schema says an array of strings; neither a null entry nor a
+# bare string must take the whole scan down.
+@test "a null or non-array licence field is treated as unknown, not as an error" {
+    licensed /src/js/package-lock.json npm c 1.0.0 '[null]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+    licensed /src/js/package-lock.json npm d 1.0.0 '"UNKNOWN"'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+    licensed /src/js/package-lock.json npm e 1.0.0 '"GPL-3.0-only"'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+}
+
+# deps.dev knows nothing about a workspace member, a git dependency or a local
+# npm package; "unknown" there is a fact about deps.dev, not about the licence.
+@test "an unknown licence on a workspace, git or local package is not reported" {
+    licensed /src/Cargo.lock crates.io midnight-node 3.0.0 '["UNKNOWN"]'
+    packages '[{"path":"Cargo.lock","name":"midnight-node","version":"3.0.0","line":5,"source":"path"}]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
+    packages '[{"path":"Cargo.lock","name":"yamux","version":"0.12.2","line":5,"source":"git"}]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/js/package-lock.json npm my-app 1.0.0 '["UNKNOWN"]'
+    jq '.results[0].packages[0].package.purl = "pkg:npm/my-app@1.0.0?source=LOCAL"' "$TMP/osv.json" \
+        > "$TMP/l.json" && mv "$TMP/l.json" "$TMP/osv.json"
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "a banned licence on a git or path package is still a violation" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[{"path":"Cargo.lock","name":"polkadot-primitives","version":"18.0.0","line":5,"source":"git"}]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+}
+
+@test "licence rules are declared once each, with the allowlist in the help text" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    licensed_convert "MIT,Apache-2.0"
+    [ "$(sarif '[.runs[0].tool.driver.rules[] | select(.id == "license-violation")] | length')" = 1 ]
+    [[ "$(rule license-violation .help.text)" == *"MIT, Apache-2.0"* ]]
+}
+
+@test "licence checking is off when no allowlist is given, or when it is 'none'" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed_convert none
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
 }

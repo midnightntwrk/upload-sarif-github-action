@@ -17,8 +17,9 @@ repos).
   against GHSAs
 - **[osv-scanner]** - Known-vulnerable *and known-malicious*
   packages in lockfiles (OSV's `MAL-*` feed, which Trivy lacks),
-  plus versions yanked from crates.io or PyPI and deprecated or
-  unpublished on npm (deps.dev), which carry no advisory id
+  versions yanked from crates.io or PyPI and deprecated or
+  unpublished on npm (deps.dev), which carry no advisory id, and
+  dependency licences against an allowlist (`licenses_allowlist`)
 
 Each scanner can be skipped individually via a
 `skip_<scanner>_scan` input.
@@ -72,6 +73,7 @@ All inputs are optional.
 | `skip_trivy_scan`     | `true` skips Trivy (vulns)      | `false`    |
 | `skip_gitleaks_scan`  | `true` skips gitleaks (secrets) | `false`    |
 | `skip_osv_scan`       | `true` skips osv-scanner        | `false`    |
+| `licenses_allowlist`  | SPDX allowlist for dependency licences; `default` is [`scripts/license-allowlist.txt`](scripts/license-allowlist.txt), `none` turns licence findings off | `default` |
 
 `fail_severity` accepts: critical, high, medium, low,
 warning, note. Must be set on private repos.
@@ -112,7 +114,7 @@ claim.
 | opengrep | level × confidence | `error`+high → CRITICAL, +medium → HIGH, +low → MEDIUM; `warning` → LOW | CRITICAL |
 | zizmor | per-finding level | `error` → CRITICAL, `warning` → MEDIUM, `note` → LOW | CRITICAL |
 | scorecard | a score out of ten | `error` → HIGH, `warning` → MEDIUM, `note` → NOTE | HIGH |
-| osv-scanner | group CVSS; `MAL-*` id; deprecated flag | `MAL-*` → CRITICAL; CVSS ≥9 CRITICAL, ≥7 HIGH, ≥4 MEDIUM, else LOW; yanked/deprecated → MEDIUM | CRITICAL |
+| osv-scanner | group CVSS; `MAL-*` id; deprecated flag; licence | `MAL-*` → CRITICAL; CVSS ≥9 CRITICAL, ≥7 HIGH, ≥4 MEDIUM, else LOW; yanked/deprecated → MEDIUM; licence outside allowlist → HIGH, undeterminable → LOW | CRITICAL |
 | others | level only | `error` → HIGH, `warning` → MEDIUM, `note` → LOW | HIGH |
 
 **opengrep needs the confidence tag.** `error` alone covers
@@ -279,6 +281,66 @@ version alone. A crate built from a git fork is not reported
 when crates.io merely yanked the release of the same name and
 version: the action reads `source =` from `Cargo.lock` to tell
 them apart.
+
+#### Licences
+
+Every dependency's licence expression (deps.dev's, via
+osv-scanner) is checked against `licenses_allowlist`. The
+default, [`scripts/license-allowlist.txt`](scripts/license-allowlist.txt),
+is what an Apache-2.0 project may depend on, after the Apache
+Software Foundation's [third-party licence policy](https://www.apache.org/legal/resolved.html):
+permissive licences and weak copyleft (MPL, EPL, CDDL, and -
+departing from the ASF - LGPL, as linked-not-modified) in;
+GPL, AGPL, SSPL, BUSL and the non-commercial Creative Commons
+out. `GPL-3.0-or-later WITH Classpath-exception-2.0`, which
+polkadot-sdk's client crates carry, is allowed. Expressions are
+evaluated properly: `Apache-2.0 OR MIT` passes on either,
+`MIT AND GPL-3.0-only` fails, an allowed base licence allows
+its `WITH` exceptions, and `GPL-3.0+` / bare `LGPL-3.0` are
+read as the modern spellings.
+
+- `license-violation`, **HIGH**: the expression is not satisfied.
+  Replace the package, or excuse that one package with a reason.
+- `license-unknown`, **LOW**: deps.dev has no usable licence for
+  the version (`UNKNOWN`, or text it could not map to an SPDX
+  id). Reported only for packages from a public registry; a
+  workspace member, git dependency or local npm package is
+  skipped, since deps.dev knows nothing about those. Read the
+  package's own LICENSE and record what you found.
+
+Dev dependencies are never licence findings: nobody ships
+them. Optional dependencies are checked, because npm installs
+one whenever it can (`fsevents`, `detect-libc`), so it ships.
+An optional dependency of a dev dependency (the esbuild
+platform binaries) is dev: `package-lock.json` marks it
+`dev` + `optional`, and the action reads the lockfile's own
+flags rather than osv-scanner's groups, which fold that state
+into the shipped `devOptional` one. The lockfile has to mark
+the dev tree, though - `package-lock.json` and
+`npm-shrinkwrap.json` do, `yarn.lock`, `pnpm-lock.yaml`,
+`bun.lock` and `Cargo.lock` do not, so a repository on those
+sees its dev tree too and excuses what it must.
+
+Per-package waivers go in `osv-scanner.toml`, beside the
+lockfile:
+
+```toml
+# Linked only in the --light-client feature, which this binary never enables.
+[[PackageOverrides]]
+name = "smoldot"
+ecosystem = "crates.io"
+license.ignore = true
+
+# deps.dev has no licence for this version; the repository's LICENSE is MIT.
+[[PackageOverrides]]
+name = "ssh2"
+version = "1.16.0"
+ecosystem = "npm"
+license.override = ["MIT"]
+```
+
+A repository under a different licence, or whose policy differs,
+sets its own list: `licenses_allowlist: "MIT,Apache-2.0,MPL-2.0"`.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as
