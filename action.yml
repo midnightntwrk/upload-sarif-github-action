@@ -15,7 +15,7 @@ inputs:
     required: false
     default: ""
   fail_severity:
-    description: "Fail the action when scans report this severity or higher (e.g. high, critical, medium). This must be set on private repos."
+    description: "Fail the action when scans report this severity or higher (e.g. critical, high, medium). This must be set on private repos."
     required: false
     default: "high"
   differential_gate:
