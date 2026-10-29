@@ -36,8 +36,9 @@
 #               default_licenses; "" or "none" turns this off) every
 #               package's expressions, as deps.dev reports
 #               them under --licenses --all-packages, go through spdx.jq.
-#               One that fails is a `license-violation`, HIGH; one deps.dev
-#               could not tell (UNKNOWN, non-standard, nothing) is a
+#               One that fails is a `license-violation`, HIGH, whatever else
+#               sits beside it in the list; one deps.dev could not tell
+#               (UNKNOWN, non-standard, nothing) is a
 #               `license-unknown`, LOW, and only for a package from a public
 #               registry - deps.dev knows nothing of a workspace member, a
 #               git dependency or a local npm package. Dev and optional
@@ -191,7 +192,9 @@ def licence_results($list; $packages):
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[] | select(dev_or_optional | not)
-        | .package as $pk | (.licenses // []) as $lic
+        # Strings by schema; anything else is "could not tell", not a crash.
+        | .package as $pk | ((.licenses // []) | map(if type == "string" then . else "UNKNOWN" end)) as $lic
+        | ($lic | map(select(ascii_downcase | . != "unknown" and . != "non-standard"))) as $definite
         | $index["\($path)|\($pk.name)|\($pk.version)"] as $known
         # Unindexed crates (no Cargo.lock index given) count as registry.
         | (if $pk.ecosystem == "crates.io" then ($known.source // "registry") == "registry"
@@ -199,18 +202,18 @@ def licence_results($list; $packages):
         | { ruleId: null, level: null, properties: {},
             locations: [{physicalLocation: {artifactLocation: {uri: $path},
                                             region: {startLine: ($known.line // 1)}}}] }
-          + ( if ($lic | licence_unknown) then
+          + ( if ($definite | length) > 0 and ($definite | package_allowed($al) | not) then
+                  { ruleId: "license-violation", level: "error", properties: {severity: "HIGH"},
+                    message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)) is licensed "
+                        + "'\($lic | join("; "))', which the allowlist does not permit.")} }
+              elif ($lic | licence_unknown) then
                   if $registry then
                       { ruleId: "license-unknown", level: "note", properties: {severity: "LOW"},
                         message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)): "
                             + "deps.dev reports no usable licence (\($lic | join(", ") | if . == "" then "none" else . end)). "
                             + "Check the package's own LICENSE and record it in osv-scanner.toml.")} }
                   else empty end
-              elif ($lic | package_allowed($al)) then empty
-              else
-                  { ruleId: "license-violation", level: "error", properties: {severity: "HIGH"},
-                    message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)) is licensed "
-                        + "'\($lic | join("; "))', which the allowlist does not permit.")} }
+              else empty
               end ) ]
     end;
 

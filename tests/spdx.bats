@@ -53,6 +53,14 @@ allowed() {
     [ "$(allowed "GPL-3.0-only,gpl-3.0-or-later" "GPL-3.0" "GPL-3.0+")" = "true true" ]
 }
 
+# SPDX retired the one-token exception ids in 3.0; deps.dev still hands some
+# back. Each means its modern `base WITH exception` form.
+@test "a deprecated one-token exception id reads as its WITH form" {
+    [ "$(allowed "GPL-2.0-only WITH Classpath-exception-2.0" "GPL-2.0-with-classpath-exception" "GPL-2.0-with-GCC-exception")" = "true false" ]
+    [ "$(allowed "GPL-3.0-only WITH GCC-exception-3.1" "GPL-3.0-with-GCC-exception" "gpl-3.0-with-gcc-exception")" = "true true" ]
+    [ "$(allowed "MIT" "GPL-2.0-with-classpath-exception")" = "false" ]
+}
+
 @test "the allowlist tolerates spaces and empty items" {
     [ "$(allowed " MIT , , Apache-2.0 " MIT Apache-2.0)" = "true true" ]
 }

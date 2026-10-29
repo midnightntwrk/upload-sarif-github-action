@@ -17,13 +17,25 @@
 #
 # Identifiers compare case-insensitively (SPDX says so), after normalising the
 # pre-2.0 spellings deps.dev still hands back: `GPL-3.0+` is `GPL-3.0-or-later`,
-# a bare `GPL-3.0` is `GPL-3.0-only`. UNKNOWN is never allowed - the caller
-# reports it under its own rule - and neither is anything malformed.
+# a bare `GPL-3.0` is `GPL-3.0-only`, and the one-token exception ids SPDX
+# retired in 3.0 (`GPL-2.0-with-classpath-exception`) are their `WITH` form.
+# UNKNOWN is never allowed - the caller reports it under its own rule - and
+# neither is anything malformed.
+
+def legacy_with: {
+    "gpl-2.0-with-autoconf-exception":  "gpl-2.0-only with autoconf-exception-2.0",
+    "gpl-2.0-with-bison-exception":     "gpl-2.0-only with bison-exception-2.2",
+    "gpl-2.0-with-classpath-exception": "gpl-2.0-only with classpath-exception-2.0",
+    "gpl-2.0-with-font-exception":      "gpl-2.0-only with font-exception-2.0",
+    "gpl-2.0-with-gcc-exception":       "gpl-2.0-only with gcc-exception-2.0",
+    "gpl-3.0-with-autoconf-exception":  "gpl-3.0-only with autoconf-exception-3.0",
+    "gpl-3.0-with-gcc-exception":       "gpl-3.0-only with gcc-exception-3.1" };
 
 def normalise:
     ascii_downcase
     | if endswith("+") then .[:-1] + "-or-later" else . end
-    | if test("^(a?gpl|lgpl)-[0-9]+\\.[0-9]+$") then . + "-only" else . end;
+    | if test("^(a?gpl|lgpl)-[0-9]+\\.[0-9]+$") then . + "-only" else . end
+    | legacy_with[.] // .;
 
 # "MIT, Apache-2.0" -> {"mit": true, "apache-2.0": true}; a `WITH` item is one
 # key with single spaces.
@@ -47,7 +59,10 @@ def parse_expr($al):
           # deps.dev's placeholders for "could not tell": not licences, so an
           # allowlist cannot name them into existence.
           elif ($t[$i] | ascii_downcase) == "unknown" or ($t[$i] | ascii_downcase) == "non-standard" then [false, $i + 1]
-          else [($al[$t[$i] | normalise] // false), $i + 1] end;
+          # A legacy id normalises to `base with exc`: allowed as its base or as
+          # the exact compound, the same as a spelled-out WITH.
+          else ($t[$i] | normalise) as $n
+               | [ (($al[$n | split(" ")[0]] // false) or ($al[$n] // false)), $i + 1 ] end;
     def with_:
         atom as $a
         | if $a == null then null

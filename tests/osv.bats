@@ -346,6 +346,27 @@ licensed_convert() {
     [ "$(result .ruleId)" = license-unknown ]
 }
 
+# deps.dev found one licence it could read and one it could not. The one it
+# read is the finding: an unknown beside a GPL must not soften it to LOW.
+@test "a banned licence beside an unknown one is still a violation" {
+    licensed /src/js/package-lock.json npm a 1.0.0 '["GPL-3.0-only", "UNKNOWN"]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .ruleId)" = license-violation ]
+    licensed /src/js/package-lock.json npm b 1.0.0 '["MIT", "UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+}
+
+# osv-scanner's schema says strings; a null must not take the whole scan down.
+@test "a null licence entry is treated as unknown, not as an error" {
+    licensed /src/js/package-lock.json npm c 1.0.0 '[null]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+}
+
 # deps.dev knows nothing about a workspace member, a git dependency or a local
 # npm package; "unknown" there is a fact about deps.dev, not about the licence.
 @test "an unknown licence on a workspace, git or local package is not reported" {
