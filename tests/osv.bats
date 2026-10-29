@@ -368,6 +368,25 @@ licensed_convert() {
     [ "$(npm_flags '"dev":"false","optional":false,"devOptional":false' '[]')" = 1 ]
 }
 
+# One name@version can be installed twice in one lockfile - at the root for
+# production and again under a dev tool's own node_modules. osv-scanner reports
+# it once; the index holds both entries, and the package ships if any of them
+# does. The line is a shipping entry's, whichever order the lockfile lists them.
+@test "a package installed for production and again under a dev tool ships" {
+    dup() {
+        npm_packages "[$1]"
+        licensed /src/js/package-lock.json npm dup 1.0.0 '["GPL-3.0-only"]' '[]'
+        licensed_convert "MIT"
+        printf '%s %s' "$(sarif '.runs[0].results | length')" "$(result .locations[0].physicalLocation.region.startLine)"
+    }
+    packages '[]'
+    prod='{"path":"js/package-lock.json","name":"dup","version":"1.0.0","line":5,"dev":false,"optional":false,"devOptional":false}'
+    dev='{"path":"js/package-lock.json","name":"dup","version":"1.0.0","line":40,"dev":true,"optional":false,"devOptional":false}'
+    [ "$(dup "$prod,$dev")" = "1 5" ]
+    [ "$(dup "$dev,$prod")" = "1 5" ]
+    [ "$(dup "$dev")" = "0 null" ]
+}
+
 @test "an unknown licence on a registry package is a license-unknown at LOW" {
     licensed /src/Cargo.lock crates.io ring 0.16.20 '["non-standard"]'
     packages '[{"path":"Cargo.lock","name":"ring","version":"0.16.20","line":5,"source":"registry"}]'

@@ -175,8 +175,12 @@ def dev_only: (.dependency_groups // []) | (index("dev") != null) and (index("op
 
 # With the lockfile's flags (scripts/npm-lock-packages.sh) the answer is exact:
 # `dev` is set for the dev-only and the dev+optional states, and for neither of
-# the two that ship (optional, devOptional).
-def ships($flags): if $flags != null then ($flags.dev == true | not) else (dev_only | not) end;
+# the two that ship (optional, devOptional). One name@version can be installed
+# more than once in a lockfile - at the root for production and again under a
+# dev tool's node_modules - and osv-scanner reports it once, so $entries is
+# every install of it: the package ships if any of them does.
+def ships($entries): if $entries != null then any($entries[]; .dev != true) else (dev_only | not) end;
+def shipping_line($entries): [$entries[]? | select(.dev != true) | .line][0];
 
 # deps.dev's "could not tell", as a whole-expression placeholder.
 def licence_unknown: length == 0 or any(.[]; ascii_downcase | . == "unknown" or . == "non-standard");
@@ -204,12 +208,13 @@ def licence_results($list; $packages; $npm):
     if $list == "" or $list == "none" then [] else
     ($list | allowlist) as $al
     | ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
-    | ( $npm | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $nindex
+    | ( $npm | group_by("\(.path)|\(.name)|\(.version)")
+        | map({key: "\(.[0].path)|\(.[0].name)|\(.[0].version)", value: .}) | from_entries ) as $nindex
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[]
-        | $nindex["\($path)|\(.package.name)|\(.package.version)"] as $flags
-        | select(ships($flags))
+        | $nindex["\($path)|\(.package.name)|\(.package.version)"] as $installs
+        | select(ships($installs))
         # An array of strings by schema; anything else is "could not tell", not a crash.
         | .package as $pk
         | ((.licenses // []) | if type == "array" then . else [.] end
@@ -221,7 +226,7 @@ def licence_results($list; $packages; $npm):
            else $pk.ecosystem != "GIT" and (($pk.purl // "") | test("source=LOCAL") | not) end) as $registry
         | { ruleId: null, level: null, properties: {},
             locations: [{physicalLocation: {artifactLocation: {uri: $path},
-                                            region: {startLine: ($known.line // $flags.line // 1)}}}] }
+                                            region: {startLine: ($known.line // shipping_line($installs) // 1)}}}] }
           + ( if ($definite | length) > 0 and ($definite | package_allowed($al) | not) then
                   { ruleId: "license-violation", level: "error", properties: {severity: "HIGH"},
                     message: {text: ("Package '\($pk.name)@\($pk.version)' (\($pk.ecosystem)) is licensed "
