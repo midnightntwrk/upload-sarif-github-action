@@ -243,9 +243,9 @@ cached-property==2.0.1 \
     --hash=sha256:484d617105e3ee0e4f1f58725e72a8ef9e93deee462222dbd51cd91230897641 \
     --hash=sha256:f617d70ab1100b7bcf6e42228f9ddcb78c676ffa167278d9f730d1c2fba69ccb
     # via cloudsplaining
-cachetools==5.5.2 \
-    --hash=sha256:1a661caa9175d26759571b2e19580f9d6393969e5dfca11fdb1f947a23e640d4 \
-    --hash=sha256:d26a22bcc62eb95c3beabd9f1ee5e820d3d2704fe2967cbe350e20c8ffcd3f0a
+cachetools==7.2.3 \
+    --hash=sha256:85ef9d2703918bedf7f88caa0b06bb3bb7a71360eb0b05c20796b89fede6e30c \
+    --hash=sha256:e6fafd06de4a5bd915ff7d247588ea497e28c9a568c62db8678d9a5f11515a9a
     # via checkov
 certifi==2026.10.19 \
     --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
