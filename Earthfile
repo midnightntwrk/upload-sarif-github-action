@@ -25,7 +25,7 @@ APT_INSTALL:
 # read this path for TLS.
 ca-certs:
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     SAVE ARTIFACT /etc/ssl/certs/ca-certificates.crt
 
 # Static jq, the same binary in every scanner image and in +test, so the
@@ -33,7 +33,7 @@ ca-certs:
 # attestations (ci.yml at the release tag); 1.7.1 did not.
 jq-bin:
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     # renovate: datasource=github-releases packageName=jqlang/jq extractVersion=^jq-(?<version>.+)$
     ARG JQ_VERSION=1.8.2
     ARG TARGETARCH
@@ -98,7 +98,7 @@ scan:
 bats-bin:
     # Hash-pinned like every other tool here; the tarball is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     # renovate: datasource=github-releases packageName=bats-core/bats-core
     ARG BATS_VERSION=v1.14.0
     WORKDIR /tmp
@@ -134,10 +134,10 @@ test:
 opengrep-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.32.0
+    ARG OPENGREP_VERSION=v1.33.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -176,7 +176,7 @@ opengrep:
 scorecard-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
     # renovate: datasource=github-releases packageName=ossf/scorecard
     ARG SCORECARD_VERSION=5.6.0
     ARG TARGETARCH
@@ -234,7 +234,7 @@ pip-tools-requirements:
     # committed as pip-tools-requirements.txt, which is what +checkov-requirements
     # actually installs. Maintainer-run; review the diff before committing.
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
     # renovate: datasource=pypi packageName=pip-tools
     ARG PIP_TOOLS_VERSION=7.6.2
     RUN pip install --no-cache-dir pip-tools==${PIP_TOOLS_VERSION}
@@ -251,7 +251,7 @@ pip-tools-requirements:
 
 checkov-requirements:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
     # pip-tools needs its own deps (click, build, ...) to run at all, and
     # --require-hashes forbids resolving them on the fly - hence the committed
     # closure. Regenerate it with +pip-tools-requirements.
@@ -262,7 +262,7 @@ checkov-requirements:
     # asteval is pinned ==1.0.6 by checkov itself, so its bumps (sandbox-escape
     # GHSAs fixed in 1.0.9) cannot land here until checkov moves that pin.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.3.30
+    ARG CHECKOV_VERSION=3.4.3
     # Floor the transitive GitPython at its latest CVE fix (CVE-2026-114145,
     # fixed in 3.2.1), so a checkov cap fails the resolve instead of regressing.
     RUN printf 'checkov==%s\ngitpython>=3.2.1\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
@@ -271,7 +271,7 @@ checkov-requirements:
 
 checkov:
     # renovate: datasource=docker packageName=python
-    FROM python:3.13-slim@sha256:bf503bb2243c5aad0aa951544dd60d165f992646441d35dea90893703fc26251
+    FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
     WORKDIR /src
 
     COPY requirements.txt /tmp/requirements.txt
@@ -301,10 +301,10 @@ checkov:
 trivy-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.76.1
+    ARG TRIVY_VERSION=0.76.2
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -353,10 +353,10 @@ osv-bin:
     # Tiny downloader stage; hash check is the trust anchor. The release ships a
     # bare binary, no tarball.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 
     # renovate: datasource=github-releases packageName=google/osv-scanner
-    ARG OSV_SCANNER_VERSION=v2.7.0
+    ARG OSV_SCANNER_VERSION=v2.7.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
@@ -412,7 +412,7 @@ osv:
 gitleaks-bin:
     # Tiny downloader stage; hash check is the trust anchor.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 
     # renovate: datasource=github-releases packageName=gitleaks/gitleaks
     ARG GITLEAKS_VERSION=8.30.1
@@ -473,10 +473,10 @@ zizmor-bin:
     # Hash check is the trust anchor; TLS validation is redundant
     # (curl -k), and zizmor itself runs --offline at scan time.
     # renovate: datasource=docker packageName=curlimages/curl
-    FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+    FROM curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
-    ARG ZIZMOR_VERSION=v1.31.1
+    ARG ZIZMOR_VERSION=v1.32.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
