@@ -17,9 +17,10 @@ and this project adheres to
   deprecated or unpublished on npm - is reported as
   `deprecated-package` at MEDIUM, on the lockfile line that names
   it. A yank usually follows a defect found before any advisory
-  was filed, so nothing else here could name it. A crate from a
-  git fork is not reported when crates.io merely yanked the
-  release sharing its name and version. Excuse a deliberate pin
+  was filed, so nothing else here could name it. Only a crate
+  `Cargo.lock` sources from crates.io is reported, not a git,
+  path or other-registry crate sharing a yanked release's name
+  and version. Excuse a deliberate pin
   with `[[PackageOverrides]]` in `osv-scanner.toml`
 - **osv-scanner's SARIF is written here, from its JSON report.**
   Upstream's `--format sarif` drops a deprecated package that has

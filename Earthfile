@@ -414,9 +414,10 @@ osv:
             --x-flag-deprecated-packages --format json --output-file /output/osv.json . ; \
         rc=$?; [ $rc -le 1 ] || exit $rc
 
-    # Where each crate sits in its Cargo.lock, and whether it came from git:
-    # deps.dev matches on name and version alone, so a crate built from a fork
-    # is "yanked" whenever crates.io yanked the same release.
+    # Where each crate sits in its Cargo.lock, and whether it came from
+    # crates.io: deps.dev matches on name and version alone, so a git fork,
+    # a path crate or another registry's crate is "yanked" whenever crates.io
+    # yanked the same release.
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package

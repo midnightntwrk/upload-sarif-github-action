@@ -27,9 +27,10 @@
 #   deprecated  one `deprecated-package` result per package - yanked on
 #               crates.io or PyPI, deprecated or unpublished on npm - MEDIUM,
 #               through the same banding (the rule carries 5.0). A crate the
-#               Cargo.lock index says came from git is skipped: deps.dev
-#               matches on name and version alone, so a fork is "yanked"
-#               whenever crates.io yanked the same release.
+#               Cargo.lock index says did not come from crates.io (git, path,
+#               another registry) is skipped: deps.dev matches on name and
+#               version alone, so a fork is "yanked" whenever crates.io yanked
+#               the same release.
 #   neither     no score on the rule: the plain `warning` reading applies.
 
 def band:
@@ -130,9 +131,9 @@ def deprecated_rule: {
 };
 
 # The index holds every lockfile entry per path|name|version: one Cargo.lock can
-# carry a crates.io crate and a git twin of the same name and version. Skip only
-# when every entry is git; point at the first non-git one. Not in the index:
-# report, on line 1.
+# carry a crates.io crate and a git or path twin of the same name and version.
+# Report when any entry is crates.io, at the first such line. Not in the index
+# (no Cargo.lock, or another ecosystem): report, on line 1.
 def deprecated_results($packages):
     ( $packages | group_by("\(.path)|\(.name)|\(.version)")
       | map({key: "\(.[0].path)|\(.[0].name)|\(.[0].version)", value: .}) | from_entries ) as $index
@@ -141,8 +142,8 @@ def deprecated_results($packages):
         | (.packages // [])[] | .package | select(.deprecated == true)
         | "\($path)|\(.name)|\(.version)" as $key
         | ($index[$key] // null) as $entries
-        | select($entries == null or any($entries[]; .git | not))
-        | ($entries // [] | map(select(.git | not)) | min_by(.line)) as $known
+        | select($entries == null or any($entries[]; .crates_io == true))
+        | ($entries // [] | map(select(.crates_io == true)) | min_by(.line)) as $known
         | {key: $key, pkg: ., path: $path, known: $known} ]
     | unique_by(.key)
     | [ .[] | .known as $known | .path as $path | .pkg

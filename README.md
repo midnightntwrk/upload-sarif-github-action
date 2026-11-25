@@ -275,10 +275,11 @@ reason = "0.9.9 needs MSRV 1.80; pinned until the toolchain bump lands"
 ```
 
 The deprecation data is deps.dev's and is keyed on name and
-version alone. A crate built from a git fork is not reported
-when crates.io merely yanked the release of the same name and
-version: the action reads `source =` from `Cargo.lock` to tell
-them apart.
+version alone. Only a crate `Cargo.lock` says came from
+crates.io is reported: a git fork, a path crate (a workspace
+member, or a yanked crate vendored to patch it) or another
+registry's crate is not, when crates.io merely yanked the
+release of the same name and version.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as

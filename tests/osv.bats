@@ -234,7 +234,7 @@ stamped() {
 
 @test "the result points at the crate's own line in Cargo.lock" {
     deprecated /src/rust/Cargo.lock crates.io spin 0.9.8
-    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"git":false}]'
+    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"crates_io":true}]'
     converted
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
 }
@@ -244,7 +244,7 @@ stamped() {
 # Cargo.lock says where it really came from.
 @test "a git-sourced crate is not reported" {
     deprecated /src/Cargo.lock crates.io sp-api-proc-macro 15.0.0
-    packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"git":true}]'
+    packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"crates_io":false}]'
     converted
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
@@ -253,8 +253,8 @@ stamped() {
 # git fork (polkadot-sdk forks do). The git twin must not hide the real yank,
 # whichever comes first in the file.
 twins() {
-    local reg='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"git":false}'
-    local git='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":8,"git":true}'
+    local reg='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"crates_io":true}'
+    local git='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":8,"crates_io":false}'
     if [ "$1" = git-last ]; then packages "[$reg,$git]"; else packages "[$git,$reg]"; fi
 }
 
@@ -281,6 +281,23 @@ twins() {
     twins git-last
     converted
     [ "$(sarif '.runs[0].results | length')" = 1 ]
+}
+
+# A path crate - a workspace member, or a yanked crate vendored to patch it -
+# has no `source =` line; another registry has its own. Neither is the crates.io
+# release deps.dev looked up.
+@test "a path crate is not reported" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"crates_io":false}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "an index entry with no crates_io flag is not taken as crates.io" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
 @test "deprecated packages are added to the vulnerability results, not in place of them" {
