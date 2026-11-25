@@ -1,11 +1,11 @@
 #!/usr/bin/env bats
 #
-# The osv-scanner policy, applied by scripts/osv.jq before the gate sees it.
-#
-# osv-scanner sets `level: warning` on every result, so its own SARIF cannot
-# fail the build at the `critical` default. The signal is elsewhere: a CVSS
-# score on the rule (`properties.security-severity`), and for malware - OSV's
-# MAL-* ids - nothing at all.
+# The osv-scanner policy. scripts/osv.jq turns osv-scanner's JSON report into
+# the SARIF the gate reads - upstream's own SARIF drops a deprecated package
+# that has no vulnerability (google/osv-scanner#3164) - and stamps severity:
+# the group's CVSS banded, MAL-* CRITICAL, a yanked or deprecated package
+# MEDIUM. Rule ids and messages follow upstream's, so existing code-scanning
+# alerts keep their identity.
 
 load helper
 
@@ -14,25 +14,125 @@ OSV_JQ="$ROOT/scripts/osv.jq"
 setup() { TMP="$(mktemp -d)"; }
 teardown() { rm -rf "$TMP"; }
 
-# doc <rule-id> <security-severity or ""> <uri> -- osv-scanner-shaped SARIF
-doc() {
-    jq -n --arg id "$1" --arg cvss "$2" --arg uri "$3" \
-        '{runs: [{tool: {driver: {name: "osv-scanner",
-            rules: [{id: $id} + (if $cvss == "" then {}
-                                 else {properties: {"security-severity": $cvss}} end)]}},
-          results: [{ruleId: $id, level: "warning",
-            locations: [{physicalLocation: {artifactLocation: {uri: $uri}}}]}]}]}' \
-        > "$TMP/in.sarif"
+# report <lockfile path in the container> <name> <version> <ids,csv> <cvss or ""> [<aliases,csv>]
+#
+# One package in one lockfile with one advisory group. Every advisory in the
+# group is fixed in 9.9.9. Shape is osv-scanner 2.7.0's `--format json`.
+report() {
+    jq -n --arg path "$1" --arg name "$2" --arg ver "$3" --arg ids "$4" --arg cvss "$5" \
+          --arg aliases "${6:-}" '
+        ($ids | split(",")) as $ids
+        | ($aliases | if . == "" then [] else split(",") end) as $al
+        | {results: [{source: {path: $path, type: "lockfile"},
+            packages: [{package: {name: $name, version: $ver, ecosystem: "crates.io"},
+              vulnerabilities: [$ids[] as $id
+                | {id: $id, aliases: $al, summary: "summary of \($id)", details: "details of \($id)",
+                   affected: [{package: {name: $name, ecosystem: "crates.io"},
+                               ranges: [{type: "SEMVER", events: [{introduced: "0"}, {fixed: "9.9.9"}]}]}]}],
+              groups: [{ids: $ids, max_severity: $cvss}]}]}]}' > "$TMP/osv.json"
 }
 
-# stamped <rule-id> <security-severity> -- the severity the gate resolves
-stamped() {
-    doc "$1" "$2" file:///src/requirements.txt
+# deprecated <lockfile path> <ecosystem> <name> <version> -- a package with no
+# advisory that deps.dev calls deprecated (yanked, unpublished)
+deprecated() {
+    jq -n --arg path "$1" --arg eco "$2" --arg name "$3" --arg ver "$4" \
+        '{results: [{source: {path: $path, type: "lockfile"},
+                     packages: [{package: {name: $name, version: $ver, ecosystem: $eco,
+                                           deprecated: true}}]}]}' > "$TMP/osv.json"
+}
+
+# packages <json array> -- what scripts/cargo-lock-packages.sh prints
+packages() { printf '%s\n' "$1" > "$TMP/pkgs.json"; }
+
+# convert [jq args...] -- $TMP/osv.json -> $TMP/r/osv.sarif
+convert() {
     mkdir -p "$TMP/r"
-    jq -f "$OSV_JQ" "$TMP/in.sarif" > "$TMP/r/osv.sarif"
+    jq -f "$OSV_JQ" "$@" "$TMP/osv.json" > "$TMP/r/osv.sarif"
+}
+
+# converted -- convert with the Cargo.lock index, as the Earthfile does
+converted() { convert --slurpfile packages "$TMP/pkgs.json"; }
+
+sarif() { jq -r "$1" "$TMP/r/osv.sarif"; }
+result() { sarif ".runs[0].results[${2:-0}]$1"; }
+rule() { sarif ".runs[0].tool.driver.rules[] | select(.id == \"$1\")$2"; }
+
+# stamped <ids,csv> <cvss> -- the severity the gate resolves
+stamped() {
+    report /src/requirements.txt pkg 1.0 "$1" "$2"
+    convert
     jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
         | jq -r '.hits[0].severity'
 }
+
+# --- shape ---------------------------------------------------------------------
+
+@test "an empty report is a valid, empty SARIF" {
+    printf '%s\n' '{"results":[]}' > "$TMP/osv.json"
+    convert
+    [ "$(sarif .version)" = 2.1.0 ]
+    [ "$(sarif '.runs[0].tool.driver.name')" = osv-scanner ]
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    [ "$(sarif '.runs[0].tool.driver.rules | length')" = 0 ]
+}
+
+@test "the scanner version is recorded when given" {
+    printf '%s\n' '{"results":[]}' > "$TMP/osv.json"
+    convert --arg version 2.7.0
+    [ "$(sarif '.runs[0].tool.driver.version')" = 2.7.0 ]
+}
+
+# identifiers.IDSortFunc upstream: CVE, then an ecosystem id, then GHSA.
+@test "a rule is named by the group's display id: CVE before RUSTSEC before GHSA" {
+    report /src/Cargo.lock rustls 0.23.37 RUSTSEC-2026-0285,GHSA-2mjx-qc3c-rqvc 5.3 CVE-2026-1
+    convert
+    [ "$(result .ruleId)" = CVE-2026-1 ]
+    report /src/Cargo.lock rustls 0.23.37 RUSTSEC-2026-0285,GHSA-2mjx-qc3c-rqvc 5.3
+    convert
+    [ "$(result .ruleId)" = RUSTSEC-2026-0285 ]
+    report /src/Cargo.lock rustls 0.23.37 GHSA-2mjx-qc3c-rqvc 5.3
+    convert
+    [ "$(result .ruleId)" = GHSA-2mjx-qc3c-rqvc ]
+}
+
+@test "the message reads as upstream's, aliases included" {
+    report /src/Cargo.lock rustls 0.23.37 RUSTSEC-2026-0285,GHSA-2mjx-qc3c-rqvc 5.3
+    convert
+    [ "$(result .message.text)" = \
+      "Package 'rustls@0.23.37' is vulnerable to 'RUSTSEC-2026-0285' (also known as 'GHSA-2mjx-qc3c-rqvc')." ]
+    report /src/Cargo.lock rustls 0.23.37 RUSTSEC-2026-0285 5.3
+    convert
+    [ "$(result .message.text)" = "Package 'rustls@0.23.37' is vulnerable to 'RUSTSEC-2026-0285'." ]
+}
+
+@test "one rule per advisory group, one result per affected package" {
+    report /src/Cargo.lock lru 0.12.5 RUSTSEC-2026-0253 ""
+    jq '.results[0].packages += [(.results[0].packages[0] | .package.version = "0.7.8")]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    convert
+    [ "$(sarif '.runs[0].tool.driver.rules | length')" = 1 ]
+    [ "$(sarif '.runs[0].results | length')" = 2 ]
+    [ "$(result .message.text 1)" = "Package 'lru@0.7.8' is vulnerable to 'RUSTSEC-2026-0253'." ]
+}
+
+@test "the rule carries the score, the summary and the fixed version" {
+    report /src/Cargo.lock rustls 0.23.37 RUSTSEC-2026-0285 5.3
+    convert
+    [ "$(rule RUSTSEC-2026-0285 '.properties["security-severity"]')" = 5.3 ]
+    [ "$(rule RUSTSEC-2026-0285 .shortDescription.text)" = "RUSTSEC-2026-0285: summary of RUSTSEC-2026-0285" ]
+    [ "$(rule RUSTSEC-2026-0285 .helpUri)" = https://osv.dev/RUSTSEC-2026-0285 ]
+    [[ "$(rule RUSTSEC-2026-0285 .help.markdown)" == *"| RUSTSEC-2026-0285 | rustls | 9.9.9 |"* ]]
+}
+
+# osv-scanner reports /src/... however it is invoked; the summary and the
+# Security tab need the path as it is in the repository.
+@test "locations are made relative to the repository" {
+    report /src/js/package-lock.json left-pad 1.0.0 GHSA-x 5.0
+    convert
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = js/package-lock.json ]
+}
+
+# --- severity ------------------------------------------------------------------
 
 # Malware is not a point on a scale: a lockfile either names a package that
 # steals credentials or it does not. Same policy as a committed secret.
@@ -45,9 +145,8 @@ stamped() {
 }
 
 @test "a malicious package fails the build at the critical default" {
-    doc MAL-2025-20690 "" file:///src/js/package-lock.json
-    mkdir -p "$TMP/r"
-    jq -f "$OSV_JQ" "$TMP/in.sarif" > "$TMP/r/osv.sarif"
+    report /src/js/package-lock.json flatmap-stream 0.1.1 MAL-2025-20690 ""
+    convert
     count_findings "$TMP/r" critical
     [ "$status" -eq 1 ]
     [ "$count" = 1 ]
@@ -80,16 +179,244 @@ stamped() {
     [ "$(stamped GHSA-x "")" = MEDIUM ]
 }
 
-# osv-scanner reports file:///src/... however it is invoked; the summary and the
-# Security tab need the path as it is in the repository.
-@test "locations are made relative to the repository" {
-    doc CVE-X 5.0 file:///src/js/package-lock.json
-    [ "$(jq -r -f "$OSV_JQ" "$TMP/in.sarif" \
-        | jq -r '.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri')" \
-        = js/package-lock.json ]
+# Severity is per rule, and one rule covers every package the advisory hits.
+# osv-scanner scores each package's group on its own, so the same CVE can arrive
+# at 5.0 on one package and 9.8 on another; upstream takes the worst.
+@test "a CVE shared by packages scored differently takes the highest score" {
+    report /src/Cargo.lock a 1.0.0 CVE-2026-1 5.0
+    jq '.results[0].packages += [(.results[0].packages[0]
+            | .package.name = "b" | .groups[0].max_severity = "9.8")]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    convert
+    [ "$(rule CVE-2026-1 '.properties["security-severity"]')" = 9.8 ]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
+        | jq -r '[.hits[].severity] | unique | join(",")')" = CRITICAL ]
 }
 
-@test "an empty report passes through" {
-    printf '%s\n' '{"runs":[{"tool":{"driver":{"name":"osv-scanner"}},"results":[]}]}' > "$TMP/in.sarif"
-    [ "$(jq -f "$OSV_JQ" "$TMP/in.sarif" | jq '.runs[0].results | length')" = 0 ]
+# --- fingerprints ----------------------------------------------------------------
+
+# Code scanning tracks an alert across scans by partialFingerprints. Upstream's
+# is sha256("<display id>:<artifact uri>:<name>@<version>") over the uri it saw
+# (file:///src/...), so an alert raised before this converter keeps its identity.
+FINGERPRINTS="$ROOT/scripts/sarif-fingerprints.sh"
+fingerprinted() { convert "$@"; bash "$FINGERPRINTS" < "$TMP/r/osv.sarif" > "$TMP/r/fp.sarif" \
+    && mv "$TMP/r/fp.sarif" "$TMP/r/osv.sarif"; }
+fp() { result .partialFingerprints.primaryLocationLineHash "${1:-0}"; }
+
+@test "a vulnerability carries upstream's fingerprint, byte for byte" {
+    # From osv-scanner 2.7.0 --format sarif on this lockfile, scanned in /src.
+    report /src/Cargo.lock smallvec 1.6.0 RUSTSEC-2021-0003,CVE-2021-25900 9.8
+    fingerprinted
+    [ "$(result .ruleId)" = CVE-2021-25900 ]
+    [ "$(fp)" = f387af71c4f2b584e637af93b366cd54eadfec1c0c281fc66448049a30c9715b ]
+}
+
+@test "a git package's fingerprint names its short commit, as upstream's does" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    jq '.results[0].packages[0].package.commit = "0123456789abcdef0123456789abcdef01234567"' \
+        "$TMP/osv.json" > "$TMP/c.json" && mv "$TMP/c.json" "$TMP/osv.json"
+    fingerprinted
+    want="$(printf '%s' 'CVE-2021-25900:file:///src/Cargo.lock:smallvec@01234567' | sha256sum | cut -d' ' -f1)"
+    [ "$(fp)" = "$want" ]
+}
+
+@test "a deprecated package is fingerprinted, one per package" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages += [(.results[0].packages[0] | .package.name = "chacha20")]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    packages '[]'
+    fingerprinted --slurpfile packages "$TMP/pkgs.json"
+    [ "$(sarif '[.runs[0].results[].partialFingerprints.primaryLocationLineHash] | unique | length')" = 2 ]
+    [[ "$(fp)" =~ ^[0-9a-f]{64}$ ]]
+}
+
+# Upstream hashes the file URI, which Go's net/url escapes: space, #, %, !, (, )
+# and non-ASCII are percent-encoded, + @ = are not. From osv-scanner 2.7.0's
+# SARIF on this exact path.
+WEIRD='/src/a b#c%d/ü!(x)+@=/Cargo.lock'
+@test "a path that needs escaping keeps upstream's fingerprint" {
+    report "$WEIRD" time 0.1.43 CVE-2020-26235 6.2
+    fingerprinted
+    [ "$(fp)" = 4b4b379c19864639c616760211bf8bede340c27afcfbd4abafbb853631622729 ]
+}
+
+@test "a path that needs escaping is a valid uri in the location, as upstream's was" {
+    report "$WEIRD" time 0.1.43 CVE-2020-26235 6.2
+    convert
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = 'a%20b%23c%25d/%C3%BC%21%28x%29+@=/Cargo.lock' ]
+    deprecated "$WEIRD" crates.io spin 0.9.8
+    convert
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = 'a%20b%23c%25d/%C3%BC%21%28x%29+@=/Cargo.lock' ]
+}
+
+# The lookup must not travel as one argv string: Linux caps a single argument
+# at 128 KiB, about a thousand fingerprints.
+@test "a scan with thousands of findings is fingerprinted" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages = [range(3000) as $i | .results[0].packages[0] | .package.name = "crate-\($i)"]' \
+        "$TMP/osv.json" > "$TMP/many.json" && mv "$TMP/many.json" "$TMP/osv.json"
+    fingerprinted
+    [ "$(sarif '[.runs[0].results[].partialFingerprints.primaryLocationLineHash] | unique | length')" = 3000 ]
+}
+
+@test "the fingerprint input does not leak into the uploaded SARIF" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    fingerprinted
+    [ "$(sarif '[.runs[].results[] | .properties // {} | has("fingerprint_input")] | any')" = false ]
+}
+
+@test "a result with no fingerprint input fails the step, never ships unfingerprinted" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    convert
+    jq 'del(.runs[0].results[0].properties.fingerprint_input)' "$TMP/r/osv.sarif" > "$TMP/r/bad.sarif"
+    run bash "$FINGERPRINTS" < "$TMP/r/bad.sarif"
+    [ "$status" -ne 0 ]
+}
+
+# --- deprecated and yanked packages ------------------------------------------
+#
+# deps.dev says a version is yanked (crates.io, PyPI), deprecated or
+# unpublished (npm); osv-scanner's JSON carries it as `deprecated: true` on the
+# package. Each becomes one `deprecated-package` result. The Cargo.lock index
+# from scripts/cargo-lock-packages.sh supplies the line and the git flag.
+
+@test "a yanked crate with no advisory is reported, at MEDIUM" {
+    deprecated /src/rust/Cargo.lock crates.io spin 0.9.8
+    packages '[]'
+    converted
+    [ "$(result .ruleId)" = deprecated-package ]
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = rust/Cargo.lock ]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
+        | jq -r '.hits[0].severity')" = MEDIUM ]
+}
+
+@test "a yanked crate passes the critical default and fails at medium" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[]'
+    converted
+    count_findings "$TMP/r" critical
+    [ "$status" -eq 0 ]
+    [ "$count" = 0 ]
+    count_findings "$TMP/r" medium
+    [ "$status" -eq 1 ]
+    [ "$count" = 1 ]
+}
+
+# The Security tab shows a severity only for a rule tagged `security` with a
+# `security-severity`; anything else displays as a bare "Warning".
+@test "deprecated-package is declared once, as a security rule" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[]'
+    converted
+    [ "$(sarif '[.runs[0].tool.driver.rules[] | select(.id == "deprecated-package")] | length')" = 1 ]
+    [ "$(rule deprecated-package '.properties.tags | index("security") != null')" = true ]
+    [ "$(rule deprecated-package '.properties["security-severity"] | tonumber | . >= 4 and . < 7')" = true ]
+}
+
+# crates.io and PyPI yank; npm deprecates. The message uses the registry's word.
+@test "the message names the package and uses the registry's word" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[]'
+    converted
+    [[ "$(result .message.text)" == *"spin@0.9.8"* ]]
+    [[ "$(result .message.text)" == *yanked* ]]
+    deprecated /src/js/package-lock.json npm request 2.88.2
+    converted
+    [[ "$(result .message.text)" == *"request@2.88.2"* ]]
+    [[ "$(result .message.text)" == *deprecated* ]]
+}
+
+@test "the result points at the crate's own line in Cargo.lock" {
+    deprecated /src/rust/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"crates_io":true}]'
+    converted
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
+}
+
+# deps.dev matches on name and version alone: a crate built from a git fork is
+# flagged whenever crates.io yanked the release of the same name and version.
+# Cargo.lock says where it really came from.
+@test "a git-sourced crate is not reported" {
+    deprecated /src/Cargo.lock crates.io sp-api-proc-macro 15.0.0
+    packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"crates_io":false}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# One Cargo.lock can hold the same name and version from crates.io and from a
+# git fork (polkadot-sdk forks do). The git twin must not hide the real yank,
+# whichever comes first in the file.
+twins() {
+    local reg='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"crates_io":true}'
+    local git='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":8,"crates_io":false}'
+    if [ "$1" = git-last ]; then packages "[$reg,$git]"; else packages "[$git,$reg]"; fi
+}
+
+@test "a yanked crates.io crate is reported even when a git twin follows it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "a yanked crates.io crate is reported even when a git twin precedes it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-first
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "twins listed twice in the report are reported once" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages += .results[0].packages' "$TMP/osv.json" > "$TMP/two.json" \
+        && mv "$TMP/two.json" "$TMP/osv.json"
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+}
+
+# A path crate - a workspace member, or a yanked crate vendored to patch it -
+# has no `source =` line; another registry has its own. Neither is the crates.io
+# release deps.dev looked up.
+@test "a path crate is not reported" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"crates_io":false}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "an index entry with no crates_io flag is not taken as crates.io" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "deprecated packages are added to the vulnerability results, not in place of them" {
+    report /src/js/package-lock.json left-pad 1.0.0 GHSA-x 5.0
+    jq '.results[0].packages += [{package: {name: "request", version: "2.88.2", ecosystem: "npm", deprecated: true}}]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    packages '[]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 2 ]
+    [ "$(result .ruleId)" = GHSA-x ]
+    [ "$(result .ruleId 1)" = deprecated-package ]
+}
+
+@test "a package the report does not mark deprecated is not reported" {
+    jq -n '{results: [{source: {path: "/src/Cargo.lock", type: "lockfile"},
+            packages: [{package: {name: "serde", version: "1.0.0", ecosystem: "crates.io"}}]}]}' \
+        > "$TMP/osv.json"
+    packages '[]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "without the Cargo.lock index a yanked crate is still reported" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    convert
+    [ "$(result .ruleId)" = deprecated-package ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 1 ]
 }

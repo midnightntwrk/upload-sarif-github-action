@@ -65,9 +65,25 @@ plant_defects() {
     # fetched, and npm now serves a 0.0.1-security placeholder in its place.
     # `resolved` is load-bearing: without it osv-scanner counts the package but
     # matches nothing against it.
+    # Beside it, request@2.88.2: deprecated on npm, no advisory - the
+    # deprecated-package rule is the only thing that can name it.
     mkdir -p "$d/js"
-    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"}}}' \
+    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1","request":"2.88.2"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"},"node_modules/request":{"version":"2.88.2","resolved":"https://registry.npmjs.org/request/-/request-2.88.2.tgz"}}}' \
         > "$d/js/package-lock.json"
+
+    # osv-scanner, yanked crates: spin 0.9.8 is yanked on crates.io and has no
+    # advisory. The second entry is yanked on crates.io too, but this lockfile
+    # says it came from git, so it must not be reported - deps.dev matches by
+    # name and version alone.
+    mkdir -p "$d/rust"
+    {
+        printf 'version = 4\n\n'
+        printf '[[package]]\nname = "spin"\nversion = "0.9.8"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"\n\n'
+        printf '[[package]]\nname = "sp-api-proc-macro"\nversion = "15.0.0"\n'
+        printf 'source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2609#9c7455ea"\n'
+    } > "$d/rust/Cargo.lock"
 
     # gitleaks: the PEM markers are assembled from parts so this file does not
     # itself contain the literal the scanner matches on.
@@ -206,7 +222,35 @@ zizmor   |zizmor.sarif            |known-vulnerable-actions|CRITICAL
 checkov  |checkov.sarif           |CKV_AWS_20             |HIGH
 scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
 osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
+osv      |osv-scanner.sarif       |deprecated-package.*rust/Cargo\.lock |MEDIUM
+osv      |osv-scanner.sarif       |deprecated-package.*js/package-lock\.json |MEDIUM
 EXPECTED
+
+# ---------------------------------------------------------------------------
+# The deprecation data comes from deps.dev by name and version, with no notion
+# of where the lockfile got the package. The Cargo.lock index is what tells a
+# yanked crates.io release from a git fork that happens to share its version.
+echo "== deprecated packages: the right crate, on its own line, and only that one =="
+
+osv="$work/reports-dirty/osv-scanner.sarif"
+dep='.runs[].results[] | select(.ruleId == "deprecated-package")'
+if [ "$(jq "[$dep | select(.message.text | contains(\"spin@0.9.8\"))] | length" "$osv")" -ge 1 ]; then
+    ok "spin@0.9.8 is reported as yanked"
+else
+    no "spin@0.9.8 is not reported" "$(jq -c "[$dep | .message.text]" "$osv")"
+fi
+want="$(grep -n '^\[\[package\]\]' "$work/dirty/rust/Cargo.lock" | head -1 | cut -d: -f1)"
+got="$(jq -r "[$dep | select(.message.text | contains(\"spin@0.9.8\"))][0].locations[0].physicalLocation.region.startLine" "$osv")"
+if [ "$got" = "$want" ]; then
+    ok "and sits on the crate's own line ($want)"
+else
+    no "spin@0.9.8 is placed on line $got, expected $want"
+fi
+if [ "$(jq "[$dep | select(.message.text | contains(\"sp-api-proc-macro\"))] | length" "$osv")" = 0 ]; then
+    ok "the git-sourced crate sharing a yanked version is not reported"
+else
+    no "sp-api-proc-macro from git is reported as yanked"
+fi
 
 # The calibration is policy, and policy that only exists in jq drifts. These
 # assert the ceilings hold against real scanner output, not hand-written SARIF:
