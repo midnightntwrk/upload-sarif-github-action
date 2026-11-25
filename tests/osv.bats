@@ -179,6 +179,100 @@ stamped() {
     [ "$(stamped GHSA-x "")" = MEDIUM ]
 }
 
+# Severity is per rule, and one rule covers every package the advisory hits.
+# osv-scanner scores each package's group on its own, so the same CVE can arrive
+# at 5.0 on one package and 9.8 on another; upstream takes the worst.
+@test "a CVE shared by packages scored differently takes the highest score" {
+    report /src/Cargo.lock a 1.0.0 CVE-2026-1 5.0
+    jq '.results[0].packages += [(.results[0].packages[0]
+            | .package.name = "b" | .groups[0].max_severity = "9.8")]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    convert
+    [ "$(rule CVE-2026-1 '.properties["security-severity"]')" = 9.8 ]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
+        | jq -r '[.hits[].severity] | unique | join(",")')" = CRITICAL ]
+}
+
+# --- fingerprints ----------------------------------------------------------------
+
+# Code scanning tracks an alert across scans by partialFingerprints. Upstream's
+# is sha256("<display id>:<artifact uri>:<name>@<version>") over the uri it saw
+# (file:///src/...), so an alert raised before this converter keeps its identity.
+FINGERPRINTS="$ROOT/scripts/sarif-fingerprints.sh"
+fingerprinted() { convert "$@"; bash "$FINGERPRINTS" < "$TMP/r/osv.sarif" > "$TMP/r/fp.sarif" \
+    && mv "$TMP/r/fp.sarif" "$TMP/r/osv.sarif"; }
+fp() { result .partialFingerprints.primaryLocationLineHash "${1:-0}"; }
+
+@test "a vulnerability carries upstream's fingerprint, byte for byte" {
+    # From osv-scanner 2.7.0 --format sarif on this lockfile, scanned in /src.
+    report /src/Cargo.lock smallvec 1.6.0 RUSTSEC-2021-0003,CVE-2021-25900 9.8
+    fingerprinted
+    [ "$(result .ruleId)" = CVE-2021-25900 ]
+    [ "$(fp)" = f387af71c4f2b584e637af93b366cd54eadfec1c0c281fc66448049a30c9715b ]
+}
+
+@test "a git package's fingerprint names its short commit, as upstream's does" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    jq '.results[0].packages[0].package.commit = "0123456789abcdef0123456789abcdef01234567"' \
+        "$TMP/osv.json" > "$TMP/c.json" && mv "$TMP/c.json" "$TMP/osv.json"
+    fingerprinted
+    want="$(printf '%s' 'CVE-2021-25900:file:///src/Cargo.lock:smallvec@01234567' | sha256sum | cut -d' ' -f1)"
+    [ "$(fp)" = "$want" ]
+}
+
+@test "a deprecated package is fingerprinted, one per package" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages += [(.results[0].packages[0] | .package.name = "chacha20")]' \
+        "$TMP/osv.json" > "$TMP/two.json" && mv "$TMP/two.json" "$TMP/osv.json"
+    packages '[]'
+    fingerprinted --slurpfile packages "$TMP/pkgs.json"
+    [ "$(sarif '[.runs[0].results[].partialFingerprints.primaryLocationLineHash] | unique | length')" = 2 ]
+    [[ "$(fp)" =~ ^[0-9a-f]{64}$ ]]
+}
+
+# Upstream hashes the file URI, which Go's net/url escapes: space, #, %, !, (, )
+# and non-ASCII are percent-encoded, + @ = are not. From osv-scanner 2.7.0's
+# SARIF on this exact path.
+WEIRD='/src/a b#c%d/ü!(x)+@=/Cargo.lock'
+@test "a path that needs escaping keeps upstream's fingerprint" {
+    report "$WEIRD" time 0.1.43 CVE-2020-26235 6.2
+    fingerprinted
+    [ "$(fp)" = 4b4b379c19864639c616760211bf8bede340c27afcfbd4abafbb853631622729 ]
+}
+
+@test "a path that needs escaping is a valid uri in the location, as upstream's was" {
+    report "$WEIRD" time 0.1.43 CVE-2020-26235 6.2
+    convert
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = 'a%20b%23c%25d/%C3%BC%21%28x%29+@=/Cargo.lock' ]
+    deprecated "$WEIRD" crates.io spin 0.9.8
+    convert
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = 'a%20b%23c%25d/%C3%BC%21%28x%29+@=/Cargo.lock' ]
+}
+
+# The lookup must not travel as one argv string: Linux caps a single argument
+# at 128 KiB, about a thousand fingerprints.
+@test "a scan with thousands of findings is fingerprinted" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages = [range(3000) as $i | .results[0].packages[0] | .package.name = "crate-\($i)"]' \
+        "$TMP/osv.json" > "$TMP/many.json" && mv "$TMP/many.json" "$TMP/osv.json"
+    fingerprinted
+    [ "$(sarif '[.runs[0].results[].partialFingerprints.primaryLocationLineHash] | unique | length')" = 3000 ]
+}
+
+@test "the fingerprint input does not leak into the uploaded SARIF" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    fingerprinted
+    [ "$(sarif '[.runs[].results[] | .properties // {} | has("fingerprint_input")] | any')" = false ]
+}
+
+@test "a result with no fingerprint input fails the step, never ships unfingerprinted" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    convert
+    jq 'del(.runs[0].results[0].properties.fingerprint_input)' "$TMP/r/osv.sarif" > "$TMP/r/bad.sarif"
+    run bash "$FINGERPRINTS" < "$TMP/r/bad.sarif"
+    [ "$status" -ne 0 ]
+}
+
 # --- deprecated and yanked packages ------------------------------------------
 #
 # deps.dev says a version is yanked (crates.io, PyPI), deprecated or
@@ -355,6 +449,19 @@ npm_packages() { printf '%s\n' "$1" > "$TMP/npm.json"; }
 licensed_convert() {
     [ -f "$TMP/npm.json" ] || npm_packages '[]'
     convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" --arg licenses "$1"
+}
+
+# Licence results ship through the same fingerprint step, which fails on a
+# result with nothing to hash.
+@test "licence results are fingerprinted, at an escaped location" {
+    licensed '/src/a b/Cargo.lock' crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    licensed_convert "MIT"
+    bash "$FINGERPRINTS" < "$TMP/r/osv.sarif" > "$TMP/r/fp.sarif"
+    want="$(printf '%s' 'license-violation:file:///src/a%20b/Cargo.lock:polkadot-primitives@18.0.0' \
+        | sha256sum | cut -d' ' -f1)"
+    [ "$(jq -r '.runs[0].results[0].partialFingerprints.primaryLocationLineHash' "$TMP/r/fp.sarif")" = "$want" ]
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = 'a%20b/Cargo.lock' ]
 }
 
 @test "a banned licence is a license-violation at HIGH" {

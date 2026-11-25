@@ -388,6 +388,7 @@ osv:
     COPY +user-source/src /src
     COPY scripts/osv.jq scripts/spdx.jq scripts/license-allowlist.txt /scripts/
     COPY scripts/cargo-lock-packages.sh scripts/npm-lock-packages.sh /scripts/
+    COPY scripts/sarif-fingerprints.sh /scripts/sarif-fingerprints.sh
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
     # SPDX allowlist for the licence rules: `default` is scripts/license-allowlist.txt
@@ -437,12 +438,14 @@ osv:
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
     # MEDIUM, a licence outside the allowlist HIGH, an undeterminable licence
-    # LOW - see scripts/osv.jq.
+    # LOW - see scripts/osv.jq. Then upstream's fingerprints, which need a
+    # sha256 that jq lacks: code scanning keys an alert on them.
     RUN jq -L /scripts -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
             --slurpfile npm /output/npm-lock-packages.json \
             --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
             --arg licenses "$LICENSES_ALLOWLIST" --rawfile default_licenses /scripts/license-allowlist.txt \
-            /output/osv.json > /output/osv-scanner.sarif
+            /output/osv.json > /output/osv-unhashed.sarif && \
+        bash /scripts/sarif-fingerprints.sh < /output/osv-unhashed.sarif > /output/osv-scanner.sarif
 
     SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif
 
