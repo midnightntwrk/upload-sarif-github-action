@@ -29,9 +29,10 @@
 #   deprecated  one `deprecated-package` result per package - yanked on
 #               crates.io or PyPI, deprecated or unpublished on npm - MEDIUM,
 #               through the same banding (the rule carries 5.0). A crate the
-#               Cargo.lock index says came from git is skipped: deps.dev
-#               matches on name and version alone, so a fork is "yanked"
-#               whenever crates.io yanked the same release.
+#               Cargo.lock index says did not come from crates.io (git, path,
+#               another registry) is skipped: deps.dev matches on name and
+#               version alone, so a fork is "yanked" whenever crates.io yanked
+#               the same release.
 #   licences    with --arg licenses (an SPDX allowlist, or `default` for
 #               scripts/license-allowlist.txt passed as --rawfile
 #               default_licenses; "" or "none" turns this off) every
@@ -42,7 +43,8 @@
 #               (UNKNOWN, non-standard, nothing) is a
 #               `license-unknown`, LOW, and only for a package from a public
 #               registry - deps.dev knows nothing of a workspace member, a
-#               git dependency or a local npm package. Dev-only packages
+#               git dependency, another Cargo registry or a local npm
+#               package. Dev-only packages
 #               are skipped: nobody ships them. Optional ones ship. With
 #               the package-lock.json index the lockfile's own flags
 #               decide, since osv-scanner's groups cannot tell an optional
@@ -149,13 +151,23 @@ def deprecated_rule: {
     properties: {tags: ["security"], "security-severity": "5.0"}
 };
 
+# The index holds every lockfile entry per path|name|version: one Cargo.lock can
+# carry a crates.io crate and a git or path twin of the same name and version.
+# Report when any entry is crates.io, at the first such line. Not in the index
+# (no Cargo.lock, or another ecosystem): report, on line 1.
 def deprecated_results($packages):
-    ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
+    ( $packages | group_by("\(.path)|\(.name)|\(.version)")
+      | map({key: "\(.[0].path)|\(.[0].name)|\(.[0].version)", value: .}) | from_entries ) as $index
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[] | .package | select(.deprecated == true)
-        | $index["\($path)|\(.name)|\(.version)"] as $known
-        | select(($known.source // "") != "git")
+        | "\($path)|\(.name)|\(.version)" as $key
+        | ($index[$key] // null) as $entries
+        | select($entries == null or any($entries[]; .source == "crates.io"))
+        | ($entries // [] | map(select(.source == "crates.io")) | min_by(.line)) as $known
+        | {key: $key, pkg: ., path: $path, known: $known} ]
+    | unique_by(.key)
+    | [ .[] | .known as $known | .path as $path | .pkg
         | { ruleId: "deprecated-package", level: "warning",
             message: {text: ("Package '\(.name)@\(.version)' (\(.ecosystem)) is "
                 + "\(.ecosystem | registry_word) upstream: the registry no longer serves "
@@ -221,8 +233,8 @@ def licence_results($list; $packages; $npm):
            | map(if type == "string" then . else "UNKNOWN" end)) as $lic
         | ($lic | map(select(ascii_downcase | . != "unknown" and . != "non-standard"))) as $definite
         | $index["\($path)|\($pk.name)|\($pk.version)"] as $known
-        # Unindexed crates (no Cargo.lock index given) count as registry.
-        | (if $pk.ecosystem == "crates.io" then ($known.source // "registry") == "registry"
+        # Unindexed crates (no Cargo.lock index given) count as crates.io.
+        | (if $pk.ecosystem == "crates.io" then ($known.source // "crates.io") == "crates.io"
            else $pk.ecosystem != "GIT" and (($pk.purl // "") | test("source=LOCAL") | not) end) as $registry
         | { ruleId: null, level: null, properties: {},
             locations: [{physicalLocation: {artifactLocation: {uri: $path},

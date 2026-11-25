@@ -234,7 +234,7 @@ stamped() {
 
 @test "the result points at the crate's own line in Cargo.lock" {
     deprecated /src/rust/Cargo.lock crates.io spin 0.9.8
-    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"registry"}]'
+    packages '[{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"crates.io"}]'
     converted
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
 }
@@ -245,6 +245,57 @@ stamped() {
 @test "a git-sourced crate is not reported" {
     deprecated /src/Cargo.lock crates.io sp-api-proc-macro 15.0.0
     packages '[{"path":"Cargo.lock","name":"sp-api-proc-macro","version":"15.0.0","line":3,"source":"git"}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# One Cargo.lock can hold the same name and version from crates.io and from a
+# git fork (polkadot-sdk forks do). The git twin must not hide the real yank,
+# whichever comes first in the file.
+twins() {
+    local reg='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"source":"crates.io"}'
+    local git='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":8,"source":"git"}'
+    if [ "$1" = git-last ]; then packages "[$reg,$git]"; else packages "[$git,$reg]"; fi
+}
+
+@test "a yanked crates.io crate is reported even when a git twin follows it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "a yanked crates.io crate is reported even when a git twin precedes it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-first
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "twins listed twice in the report are reported once" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages += .results[0].packages' "$TMP/osv.json" > "$TMP/two.json" \
+        && mv "$TMP/two.json" "$TMP/osv.json"
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+}
+
+# A path crate - a workspace member, or a yanked crate vendored to patch it -
+# has no `source =` line; another registry has its own. Neither is the crates.io
+# release deps.dev looked up.
+@test "a path crate is not reported" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"source":"path"}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "an index entry with no source is not taken as crates.io" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    packages '[{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3}]'
     converted
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
@@ -387,9 +438,9 @@ licensed_convert() {
     [ "$(dup "$dev")" = "0 null" ]
 }
 
-@test "an unknown licence on a registry package is a license-unknown at LOW" {
+@test "an unknown licence on a crates.io package is a license-unknown at LOW" {
     licensed /src/Cargo.lock crates.io ring 0.16.20 '["non-standard"]'
-    packages '[{"path":"Cargo.lock","name":"ring","version":"0.16.20","line":5,"source":"registry"}]'
+    packages '[{"path":"Cargo.lock","name":"ring","version":"0.16.20","line":5,"source":"crates.io"}]'
     licensed_convert "MIT"
     [ "$(result .ruleId)" = license-unknown ]
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 5 ]
@@ -428,15 +479,20 @@ licensed_convert() {
     [ "$(result .ruleId)" = license-violation ]
 }
 
-# deps.dev knows nothing about a workspace member, a git dependency or a local
-# npm package; "unknown" there is a fact about deps.dev, not about the licence.
-@test "an unknown licence on a workspace, git or local package is not reported" {
+# deps.dev knows nothing about a workspace member, a git dependency, another
+# Cargo registry or a local npm package; "unknown" there is a fact about
+# deps.dev, not about the licence.
+@test "an unknown licence on a workspace, git, other-registry or local package is not reported" {
     licensed /src/Cargo.lock crates.io midnight-node 3.0.0 '["UNKNOWN"]'
     packages '[{"path":"Cargo.lock","name":"midnight-node","version":"3.0.0","line":5,"source":"path"}]'
     licensed_convert "MIT"
     [ "$(sarif '.runs[0].results | length')" = 0 ]
     licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
     packages '[{"path":"Cargo.lock","name":"yamux","version":"0.12.2","line":5,"source":"git"}]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/Cargo.lock crates.io private-crate 1.0.0 '["UNKNOWN"]'
+    packages '[{"path":"Cargo.lock","name":"private-crate","version":"1.0.0","line":5,"source":"registry"}]'
     licensed_convert "MIT"
     [ "$(sarif '.runs[0].results | length')" = 0 ]
     licensed /src/js/package-lock.json npm my-app 1.0.0 '["UNKNOWN"]'

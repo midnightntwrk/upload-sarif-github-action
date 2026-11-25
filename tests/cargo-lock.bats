@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 #
 # scripts/cargo-lock-packages.sh: every [[package]] in every Cargo.lock under a
-# root, with the line it starts on and where it comes from: registry, git or
-# path. osv.jq uses the line to place a finding, `git` to drop a crate that
-# merely shares a name and version with a yanked crates.io release, and `path`
-# to keep workspace members out of the unknown-licence rule.
+# root, with the line it starts on and where it comes from: crates.io, another
+# registry, git or path. osv.jq uses the line to place a finding, `crates.io`
+# to report a yanked release only when the crate really is crates.io's (not a
+# git, path or other-registry twin of the same name and version), and the
+# source to keep non-crates.io packages out of the unknown-licence rule.
 
 load helper
 
@@ -13,8 +14,8 @@ SCRIPT="$ROOT/scripts/cargo-lock-packages.sh"
 setup() { TMP="$(mktemp -d)"; }
 teardown() { rm -rf "$TMP"; }
 
-# lockfile <relative path> -- a registry crate (line 5), a git crate (line 11)
-# and a path crate with no source line (line 17)
+# lockfile <relative path> -- a crates.io crate (line 5), a git crate (line 11)
+# and a path crate with no source line (line 18)
 lockfile() {
     mkdir -p "$TMP/$(dirname "$1")"
     cat > "$TMP/$1" <<'LOCK'
@@ -50,12 +51,34 @@ LOCK
     [ "$(jq -r '.[] | select(.name == "local-crate") | .line' <<< "$output")" = 18 ]
 }
 
-@test "records where each package comes from: registry, git or path" {
+@test "records where each package comes from: crates.io, registry, git or path" {
     lockfile Cargo.lock
     run bash "$SCRIPT" "$TMP"
+    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = crates.io ]
     [ "$(jq -r '.[] | select(.name == "sp-api-proc-macro") | .source' <<< "$output")" = git ]
-    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = registry ]
     [ "$(jq -r '.[] | select(.name == "local-crate") | .source' <<< "$output")" = path ]
+}
+
+# crates.io is written as the git index URL even when fetched over the sparse
+# protocol; accept the sparse form too. Any other registry is not crates.io.
+@test "the sparse crates.io index counts, another registry does not" {
+    cat > "$TMP/Cargo.lock" <<'LOCK'
+version = 4
+
+[[package]]
+name = "sparse-crate"
+version = "1.0.0"
+source = "sparse+https://index.crates.io/"
+
+[[package]]
+name = "private-crate"
+version = "1.0.0"
+source = "registry+https://example.com/private-index"
+LOCK
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.[] | select(.name == "sparse-crate") | .source' <<< "$output")" = crates.io ]
+    [ "$(jq -r '.[] | select(.name == "private-crate") | .source' <<< "$output")" = registry ]
 }
 
 @test "paths are relative to the root, for every lockfile under it" {
@@ -73,9 +96,8 @@ LOCK
 
 # Cargo.lock has tables other than [[package]]: [[patch.unused]] carries a name
 # and version, [metadata] carries checksums. Fields outside a package block must
-# not be read, or the last package's record is overwritten - and a `source =
-# "git+` line in another table would mark a registry crate as git and drop its
-# finding.
+# not be read, or the last package's record is overwritten - and a `source =`
+# line in another table would change where the last package came from.
 @test "fields outside a [[package]] block are ignored" {
     lockfile Cargo.lock
     cat >> "$TMP/Cargo.lock" <<'LOCK'
@@ -92,5 +114,6 @@ LOCK
     [ "$status" -eq 0 ]
     [ "$(jq 'length' <<< "$output")" = 3 ]
     [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.source)"' <<< "$output")" = "0.1.0 18 path" ]
+    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = crates.io ]
     [ "$(jq '[.[] | select(.name == "unused-patch")] | length' <<< "$output")" = 0 ]
 }

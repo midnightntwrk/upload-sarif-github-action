@@ -63,7 +63,7 @@ All inputs are optional.
 
 | Input                 | Description                     | Default    |
 | --------------------- | ------------------------------- | ---------- |
-| `fail_severity`       | Min severity to fail CI         | `critical` |
+| `fail_severity`       | Min severity to fail CI         | `high`     |
 | `differential_gate`   | `true` compares against target  | `false`    |
 | `scorecard_checks`    | Scorecard checks to run (CSV)   | see below  |
 | `skip_opengrep_scan`  | `true` skips OpenGrep (SAST)    | `false`    |
@@ -154,7 +154,7 @@ A severity outside the known set (Trivy `UNKNOWN`, SARIF
 ### Secrets always fail the build
 
 A committed secret fails the build at **every** `fail_severity`,
-including the `critical` default. gitleaks assigns no severity
+including the `high` default. gitleaks assigns no severity
 of its own, so the action stamps its findings `CRITICAL`
 before they reach the gate — a leaked credential is not a
 point on a severity scale.
@@ -277,10 +277,11 @@ reason = "0.9.9 needs MSRV 1.80; pinned until the toolchain bump lands"
 ```
 
 The deprecation data is deps.dev's and is keyed on name and
-version alone. A crate built from a git fork is not reported
-when crates.io merely yanked the release of the same name and
-version: the action reads `source =` from `Cargo.lock` to tell
-them apart.
+version alone. Only a crate `Cargo.lock` says came from
+crates.io is reported: a git fork, a path crate (a workspace
+member, or a yanked crate vendored to patch it) or another
+registry's crate is not, when crates.io merely yanked the
+release of the same name and version.
 
 #### Licences
 
@@ -304,8 +305,9 @@ read as the modern spellings.
 - `license-unknown`, **LOW**: deps.dev has no usable licence for
   the version (`UNKNOWN`, or text it could not map to an SPDX
   id). Reported only for packages from a public registry; a
-  workspace member, git dependency or local npm package is
-  skipped, since deps.dev knows nothing about those. Read the
+  workspace member, git dependency, private Cargo registry
+  crate or local npm package is skipped, since deps.dev knows
+  nothing about those. Read the
   package's own LICENSE and record what you found.
 
 Dev dependencies are never licence findings: nobody ships

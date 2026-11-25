@@ -47,9 +47,10 @@ and this project adheres to
   deprecated or unpublished on npm - is reported as
   `deprecated-package` at MEDIUM, on the lockfile line that names
   it. A yank usually follows a defect found before any advisory
-  was filed, so nothing else here could name it. A crate from a
-  git fork is not reported when crates.io merely yanked the
-  release sharing its name and version. Excuse a deliberate pin
+  was filed, so nothing else here could name it. Only a crate
+  `Cargo.lock` sources from crates.io is reported, not a git,
+  path or other-registry crate sharing a yanked release's name
+  and version. Excuse a deliberate pin
   with `[[PackageOverrides]]` in `osv-scanner.toml`
 - **osv-scanner's SARIF is written here, from its JSON report.**
   Upstream's `--format sarif` drops a deprecated package that has
@@ -92,6 +93,12 @@ and this project adheres to
 
 ### Changed
 
+- **`fail_severity` defaults to `high`, was `critical`.** A HIGH
+  CVE in a lockfile, an opengrep `error` at medium confidence or
+  a scorecard check scoring 0 now fails a repository that sets
+  nothing. Only trivy and opengrep ever emit CRITICAL, so the old
+  default gated two tools out of seven. Keep the old behaviour
+  with `fail_severity: critical`
 - **A scorecard check that scores 10 is not reported.**
   `no binaries found in the repo`, `0 existing vulnerabilities
   detected` and the like no longer appear as `NOTE` rows. 8 or 9

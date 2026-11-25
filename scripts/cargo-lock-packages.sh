@@ -2,17 +2,19 @@
 #
 # Index every [[package]] in every Cargo.lock under a root, as JSON:
 #
-#   [{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":5,"source":"registry"}, ...]
+#   [{"path":"rust/Cargo.lock","name":"spin","version":"0.9.8","line":5,"source":"crates.io"}, ...]
 #
 # `path` is relative to the root, `line` is the [[package]] header - where a
-# SARIF region should point - and `source` is registry, git or path (a
-# workspace member or path dependency has no `source =` line at all).
+# SARIF region should point - and `source` is crates.io, registry (any other),
+# git or path (a workspace member or path dependency has no `source =` line).
 #
 # For the osv target. osv-scanner's JSON names a crate but not where it sits
-# or where it came from, and deps.dev knows crates.io alone: it calls a fork
-# "yanked" whenever crates.io yanked the same name and version, and has no
-# licence for a workspace member. The lockfile is the only record of the
-# difference.
+# or where it came from, and deps.dev knows crates.io alone: it calls a git
+# fork, a path crate (a workspace member, or a yanked crate vendored to patch
+# it) or another registry's crate "yanked" whenever crates.io yanked the same
+# name and version, and has no licence for any of them. The lockfile is the
+# only record of the difference. Cargo writes crates.io as the git index URL
+# whatever the protocol; the sparse form is accepted too.
 set -euo pipefail
 
 root="${1:?usage: cargo-lock-packages.sh <root>}"
@@ -35,6 +37,8 @@ index_one() {
         /^version = "/     { v = $0; sub(/^version = "/, "", v); sub(/"$/, "", v); version = v }
         /^source = "git\+/                { src = "git" }
         /^source = "(registry|sparse)\+/  { src = "registry" }
+        /^source = "registry\+https:\/\/github\.com\/rust-lang\/crates\.io-index"$/ { src = "crates.io" }
+        /^source = "sparse\+https:\/\/index\.crates\.io\/"$/                        { src = "crates.io" }
         END { flush() }
     ' "$1"
 }
