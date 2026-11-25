@@ -129,13 +129,23 @@ def deprecated_rule: {
     properties: {tags: ["security"], "security-severity": "5.0"}
 };
 
+# The index holds every lockfile entry per path|name|version: one Cargo.lock can
+# carry a crates.io crate and a git twin of the same name and version. Skip only
+# when every entry is git; point at the first non-git one. Not in the index:
+# report, on line 1.
 def deprecated_results($packages):
-    ( $packages | map({key: "\(.path)|\(.name)|\(.version)", value: .}) | from_entries ) as $index
+    ( $packages | group_by("\(.path)|\(.name)|\(.version)")
+      | map({key: "\(.[0].path)|\(.[0].name)|\(.[0].version)", value: .}) | from_entries ) as $index
     | [ (.results // [])[]
         | (.source.path // "" | relpath) as $path
         | (.packages // [])[] | .package | select(.deprecated == true)
-        | $index["\($path)|\(.name)|\(.version)"] as $known
-        | select(($known.git // false) | not)
+        | "\($path)|\(.name)|\(.version)" as $key
+        | ($index[$key] // null) as $entries
+        | select($entries == null or any($entries[]; .git | not))
+        | ($entries // [] | map(select(.git | not)) | min_by(.line)) as $known
+        | {key: $key, pkg: ., path: $path, known: $known} ]
+    | unique_by(.key)
+    | [ .[] | .known as $known | .path as $path | .pkg
         | { ruleId: "deprecated-package", level: "warning",
             message: {text: ("Package '\(.name)@\(.version)' (\(.ecosystem)) is "
                 + "\(.ecosystem | registry_word) upstream: the registry no longer serves "

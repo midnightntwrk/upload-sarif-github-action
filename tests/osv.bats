@@ -249,6 +249,40 @@ stamped() {
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
+# One Cargo.lock can hold the same name and version from crates.io and from a
+# git fork (polkadot-sdk forks do). The git twin must not hide the real yank,
+# whichever comes first in the file.
+twins() {
+    local reg='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":3,"git":false}'
+    local git='{"path":"Cargo.lock","name":"spin","version":"0.9.8","line":8,"git":true}'
+    if [ "$1" = git-last ]; then packages "[$reg,$git]"; else packages "[$git,$reg]"; fi
+}
+
+@test "a yanked crates.io crate is reported even when a git twin follows it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "a yanked crates.io crate is reported even when a git twin precedes it" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    twins git-first
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+@test "twins listed twice in the report are reported once" {
+    deprecated /src/Cargo.lock crates.io spin 0.9.8
+    jq '.results[0].packages += .results[0].packages' "$TMP/osv.json" > "$TMP/two.json" \
+        && mv "$TMP/two.json" "$TMP/osv.json"
+    twins git-last
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+}
+
 @test "deprecated packages are added to the vulnerability results, not in place of them" {
     report /src/js/package-lock.json left-pad 1.0.0 GHSA-x 5.0
     jq '.results[0].packages += [{package: {name: "request", version: "2.88.2", ecosystem: "npm", deprecated: true}}]' \
