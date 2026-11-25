@@ -386,6 +386,7 @@ osv:
     COPY +user-source/src /src
     COPY scripts/osv.jq /scripts/osv.jq
     COPY scripts/cargo-lock-packages.sh /scripts/cargo-lock-packages.sh
+    COPY scripts/sarif-fingerprints.sh /scripts/sarif-fingerprints.sh
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
 
@@ -421,10 +422,12 @@ osv:
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
-    # MEDIUM - see scripts/osv.jq.
+    # MEDIUM - see scripts/osv.jq. Then upstream's fingerprints, which need a
+    # sha256 that jq lacks: code scanning keys an alert on them.
     RUN jq -f /scripts/osv.jq --slurpfile packages /output/cargo-lock-packages.json \
             --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
-            /output/osv.json > /output/osv-scanner.sarif
+            /output/osv.json > /output/osv-unhashed.sarif && \
+        bash /scripts/sarif-fingerprints.sh < /output/osv-unhashed.sarif > /output/osv-scanner.sarif
 
     SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif
 

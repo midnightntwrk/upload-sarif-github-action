@@ -50,6 +50,26 @@ report, because upstream's drops deprecated-only packages), and per-tool
 `calibrate` in `severity.jq`. Change a mapping only with a
 test in `tests/calibration.bats` or the tool's own `.bats`.
 
+## Alert identity is a contract
+
+Code scanning keys an alert on `ruleId` plus
+`partialFingerprints.primaryLocationLineHash`. Change either and every
+existing alert closes and reopens as new - dismissals, triage notes and
+history are lost on every consumer repo.
+
+- When this action writes a tool's SARIF itself (`osv.jq` does, from the
+  JSON report), it reproduces upstream's identity exactly: the same rule id
+  (osv: display-id order CVE, ecosystem id, GHSA) and the same fingerprint
+  (osv: `sha256("<rule id>:file:///src/<lockfile>:<name>@<version>")`, the
+  path escaped as Go's `net/url` does, hashed by
+  `scripts/sarif-fingerprints.sh` because jq has no sha256).
+  Prove parity against the upstream binary's real SARIF, not its docs, and
+  pin the upstream hash in a test.
+- Messages, descriptions and help text are cosmetic; ids and fingerprints
+  are not. Re-check both on every scanner bump.
+- A result with no fingerprint must fail the step, never ship: GitHub
+  would key it on the line content, and an edit nearby re-keys it.
+
 ## Adding or bumping a scanner
 
 - Pin every binary by sha256 in the `Earthfile`, beside a `# renovate:` line.
