@@ -304,11 +304,25 @@ read as the modern spellings.
   Replace the package, or excuse that one package with a reason.
 - `license-unknown`, **LOW**: deps.dev has no usable licence for
   the version (`UNKNOWN`, or text it could not map to an SPDX
-  id). Reported only for packages from a public registry; a
-  workspace member, git dependency, private Cargo registry
-  crate or local npm package is skipped, since deps.dev knows
-  nothing about those. Read the
-  package's own LICENSE and record what you found.
+  id), and nothing else in the expression already fails it.
+  Reported only for packages from a public registry in one of
+  the ecosystems deps.dev covers (npm, NuGet, crates.io, Go,
+  Maven, PyPI, RubyGems); a git dependency, a private
+  registry's package, a local npm package or, say, a Packagist
+  one is skipped, since deps.dev knows nothing about those.
+  Read the package's own LICENSE and record what you found.
+
+A namesake is never a licence finding: a workspace or path
+crate, a crate from another Cargo registry, a local or
+private-registry npm package. deps.dev looks packages up on
+the public registry by name and version, so its answer is about
+an unrelated package that happens to share the name. A git
+fork is still judged on its upstream's licence. A package
+excused with `license.ignore = true` (below) is never reported
+either: osv-scanner drops its licences before the check sees
+it. No licence data at all for any package deps.dev covers
+fails the scan rather than passing it: that is what a failed
+deps.dev lookup looks like.
 
 Dev dependencies are never licence findings: nobody ships
 them. Optional dependencies are checked, because npm installs
@@ -318,10 +332,11 @@ platform binaries) is dev: `package-lock.json` marks it
 `dev` + `optional`, and the action reads the lockfile's own
 flags rather than osv-scanner's groups, which fold that state
 into the shipped `devOptional` one. The lockfile has to mark
-the dev tree, though - `package-lock.json` and
-`npm-shrinkwrap.json` do, `yarn.lock`, `pnpm-lock.yaml`,
-`bun.lock` and `Cargo.lock` do not, so a repository on those
-sees its dev tree too and excuses what it must.
+the dev tree, though - `package-lock.json`,
+`npm-shrinkwrap.json` and `pnpm-lock.yaml` up to v6 (pnpm 8) do;
+a v9 `pnpm-lock.yaml` (pnpm 9 on), `yarn.lock`, `bun.lock`
+and `Cargo.lock` do not, so a repository on those sees its
+dev tree too and excuses what it must.
 
 Per-package waivers go in `osv-scanner.toml`, beside the
 lockfile:
@@ -343,6 +358,11 @@ license.override = ["MIT"]
 
 A repository under a different licence, or whose policy differs,
 sets its own list: `licenses_allowlist: "MIT,Apache-2.0,MPL-2.0"`.
+Each entry is an SPDX id, or `id WITH exception`; an expression
+(`MIT OR Apache-2.0`) is refused. An `-or-later` licence passes
+when its base version is allowed. `none` turns licence findings
+off; an empty value fails the scan rather than silently doing
+the same.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as

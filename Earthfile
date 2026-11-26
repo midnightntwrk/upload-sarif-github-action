@@ -428,8 +428,8 @@ osv:
 
     # Where each crate sits in its Cargo.lock, and whether it came from
     # crates.io: deps.dev matches on name and version alone, so a git fork,
-    # a path crate or another registry's crate is "yanked" whenever crates.io
-    # yanked the same release.
+    # a path crate or another registry's crate gets the yank status and
+    # licence of the crates.io release with the same name and version.
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
     # Where each npm package sits in its package-lock.json and the lockfile's
     # own dev/optional/devOptional flags: osv-scanner's groups fold "optional

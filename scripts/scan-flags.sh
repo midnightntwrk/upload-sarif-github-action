@@ -5,8 +5,9 @@
 #   scripts/scan-flags.sh "$RUNNER_TEMP/scan-flags"
 #
 # Written once and re-read (mapfile) by the differential gate's base scan, so
-# the two passes cannot be given different scanners. Adding a scanner means
-# editing the list below only.
+# the two passes cannot be given different scanners. Adding an input means
+# this list, its `env:` entry on action.yml's scan step and an ARG on the
+# Earthfile's `scan` target (tests/scan-flags.bats checks the first two agree).
 #
 # A line is an argument, so a value with a newline in it would be a second
 # flag: `default<LF>--SKIP_OSV_SCAN=true` in licenses_allowlist turns a scanner
@@ -28,6 +29,13 @@ for name in "${names[@]}"; do
             exit 1 ;;
     esac
 done
+
+# Empty (or only commas), osv.jq refuses it inside earth, and a failed earth target exports no
+# SARIF at all: the log would only say none was produced. Refuse it here.
+if [ -z "${LICENSES_ALLOWLIST//[[:space:],]/}" ]; then
+    echo "::error::input licenses_allowlist is empty. Pass default for the standard list, or none to turn licence checks off."
+    exit 1
+fi
 
 for name in "${names[@]}"; do
     printf -- '--%s=%s\n' "$name" "${!name-}"

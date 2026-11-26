@@ -83,8 +83,13 @@ Security tab.
 - A `license-violation` is excused per package with `[[PackageOverrides]]`
   `license.ignore = true`; a `license-unknown` is answered with
   `license.override = ["<SPDX id>"]`. Both are osv-scanner's own config and
-  take effect before osv.jq sees the package. Never answer either by adding
-  the licence to the allowlist "for now".
+  take effect before osv.jq sees the package: `license.ignore` drops the
+  package's `licenses` field, and osv.jq reads a package with no field as
+  excused, never as unknown (tests/canary.sh proves it on the real binary).
+  A report where *no* deps.dev package has the field is an error, not "all
+  excused": osv-scanner's enricher writes none when its deps.dev lookup
+  fails. Never answer either by adding the licence to the allowlist "for
+  now".
 
 When a suppression "does not work", check the raw SARIF before the comment:
 `jq '.runs[].results[] | {ruleId, suppressions}' scan_reports/<tool>.sarif`.

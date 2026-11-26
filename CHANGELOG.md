@@ -28,14 +28,18 @@ and this project adheres to
   default list, `scripts/license-allowlist.txt`, is what an
   Apache-2.0 project may depend on, after the ASF third-party
   licence policy, plus LGPL (linked, not modified) and
-  polkadot-sdk's `GPL-3.0-or-later WITH Classpath-exception-2.0`. SPDX expressions are evaluated in
-  `scripts/spdx.jq` - OR, AND, WITH, parentheses, legacy
+  polkadot-sdk's `GPL-3.0-or-later WITH Classpath-exception-2.0`.
+  SPDX expressions are evaluated in `scripts/spdx.jq` - OR, AND, WITH, parentheses, legacy
   spellings - because osv-scanner's own allowlist rejects any
   `WITH` form and never matches one against its base. Dev-only
   packages are skipped where the lockfile marks them; optional
   ones ship, so they are checked, read from `package-lock.json`'s
   own flags because osv-scanner's groups cannot tell an optional
   dependency of a dev dependency from a `devOptional` one.
+  A namesake (path or other-registry crate, local or private npm
+  package) is never judged, and a report with no licence data
+  for any package deps.dev covers fails the scan: that is what a
+  failed deps.dev lookup looks like.
   `none` turns the rules off. Across 64 midnightntwrk
   repositories the default flags 336 violations, almost all
   `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`
@@ -93,6 +97,14 @@ and this project adheres to
 
 ### Changed
 
+- **BREAKING: licence checks are on by default.**
+  `licenses_allowlist` defaults to `default`, a violation is HIGH
+  and `fail_severity` defaults to `high`, so a repository with a
+  dependency outside the list fails on upgrade. Excuse one package
+  with `[[PackageOverrides]] license.ignore = true` and a reason,
+  set a list of your own, or opt out with
+  `licenses_allowlist: none`. An empty value now fails the scan
+  instead of switching checks off. Ships as 2.0.0
 - **`fail_severity` defaults to `high`, was `critical`.** A HIGH
   CVE in a lockfile, an opengrep `error` at medium confidence or
   a scorecard check scoring 0 now fails a repository that sets

@@ -554,6 +554,7 @@ licensed_convert() {
     [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" \
         | jq -r '.hits[0].severity')" = LOW ]
     licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
+    packages '[{"path":"Cargo.lock","name":"yamux","version":"0.12.2","line":5,"source":"crates.io"}]'
     licensed_convert "MIT"
     [ "$(result .ruleId)" = license-unknown ]
 }
@@ -610,7 +611,8 @@ licensed_convert() {
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
-@test "a banned licence on a git or path package is still a violation" {
+# A git fork keeps its upstream's licence, so the crates.io answer stands for it.
+@test "a banned licence on a git package is still a violation" {
     licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
     packages '[{"path":"Cargo.lock","name":"polkadot-primitives","version":"18.0.0","line":5,"source":"git"}]'
     licensed_convert "MIT"
@@ -631,5 +633,263 @@ licensed_convert() {
     converted
     [ "$(sarif '.runs[0].results | length')" = 0 ]
     licensed_convert none
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# --- licence edge cases ----------------------------------------------------------
+
+# osv-scanner 2.7.0, real output: a package deps.dev knows nothing about comes
+# back as ["UNKNOWN"]; one excused with [[PackageOverrides]] license.ignore =
+# true comes back with no `licenses` key at all (the field is omitempty). The
+# excuse must clear the finding, not turn it into a LOW unknown. A licensed
+# package beside it: with no licence data anywhere the scan fails instead.
+@test "a package with no licences field was excused, and is not reported" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    jq '.results[0].packages += [.results[0].packages[0] | .package.name = "serde" | .licenses = ["MIT"]]
+        | del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# A field that is there but says nothing is deps.dev's "could not tell", not
+# an excuse: only the missing key is. osv-scanner never writes these forms.
+@test "a present but empty licence field is unknown, never a violation" {
+    packages '[]'
+    for lic in '[]' 'null' '["", "  "]'; do
+        licensed /src/Cargo.lock crates.io a 1.0.0 "$lic"
+        licensed_convert "MIT"
+        [ "$(result .ruleId)" = license-unknown ] || { echo "licenses: $lic"; return 1; }
+    done
+}
+
+# A placeholder inside an expression is still "could not tell". It is a
+# violation only when the expression fails whatever the placeholder stands for.
+@test "a placeholder inside an expression is unknown unless the rest already fails" {
+    packages '[]'
+    licensed /src/Cargo.lock crates.io a 1.0.0 '["MIT AND non-standard"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+    licensed /src/Cargo.lock crates.io a 1.0.0 '["GPL-3.0-only AND UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+    licensed /src/Cargo.lock crates.io a 1.0.0 '["MIT OR non-standard"]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# The same twin case as deprecated packages: the git or path entry must not
+# decide for the crates.io one, whichever comes first.
+@test "an unknown licence on a crates.io crate is reported even beside a git twin" {
+    licensed /src/Cargo.lock crates.io spin 0.9.8 '["UNKNOWN"]'
+    twins git-last
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+    twins git-first
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 3 ]
+}
+
+# deps.dev looks crates up on crates.io by name and version alone; a workspace
+# member's licence is whatever an unrelated crate of that name carries.
+@test "a path crate is never judged on a crates.io namesake's licence" {
+    licensed /src/Cargo.lock crates.io my-member 0.1.0 '["GPL-3.0-only"]'
+    packages '[{"path":"Cargo.lock","name":"my-member","version":"0.1.0","line":5,"source":"path"}]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "an unknown licence from a private npm registry is not reported; a public one is" {
+    licensed /src/js/package-lock.json npm corp-lib 1.0.0 '["UNKNOWN"]'
+    jq '.results[0].packages[0].package.purl = "pkg:npm/corp-lib@1.0.0?source=PRIVATE_REGISTRY"' \
+        "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/js/package-lock.json npm pub-lib 1.0.0 '["UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-unknown ]
+}
+
+@test "Go's stdlib pseudo-package never has an unknown licence" {
+    licensed /src/go.mod Go stdlib 1.22.0 '["UNKNOWN"]'
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "a package listed twice is one licence finding" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    jq '.results[0].packages += .results[0].packages' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 1 ]
+}
+
+# Only `none` turns licence checks off. An empty value - an unset workflow
+# variable - or a `default` with no list behind it must fail, not go quiet.
+@test "an empty allowlist, or default with no list, fails instead of turning checks off" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    npm_packages '[]'
+    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+        --arg licenses "" "$TMP/osv.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"licenses_allowlist is empty"* ]]
+    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+        --arg licenses default "$TMP/osv.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"default_licenses"* ]]
+}
+
+@test "none is the off switch whatever its case or padding" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    licensed_convert " None "
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+@test "an allowlist entry that is an expression, not an id, is refused" {
+    licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
+    packages '[]'
+    npm_packages '[]'
+    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+        --arg licenses "MIT OR Apache-2.0" "$TMP/osv.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"MIT OR Apache-2.0"* ]]
+}
+
+# osv-scanner's licence enricher returns before it writes a single licence when
+# its deps.dev request fails, so an outage looks exactly like "every package
+# excused". Licences on, a package deps.dev would answer for, and not one with
+# a licences field: fail, never pass the licence gate on no data.
+@test "a report with no licence data at all fails instead of passing the gate" {
+    licensed /src/Cargo.lock crates.io a 1.0.0 '[]'
+    jq 'del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    packages '[]'
+    npm_packages '[]'
+    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+        --arg licenses MIT "$TMP/osv.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no licence data"* ]]
+    # Off, it is no business of this file.
+    licensed_convert none
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# One excused package beside one with data is the license.ignore case, not an
+# outage. Go's stdlib and ecosystems deps.dev does not cover never count.
+@test "an excused package beside licensed ones, or no deps.dev package at all, is fine" {
+    licensed /src/Cargo.lock crates.io a 1.0.0 '["MIT"]'
+    jq '.results[0].packages += [.results[0].packages[0] | .package.name = "b" | del(.licenses)]' \
+        "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    packages '[]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/go.mod Go stdlib 1.22.0 '[]'
+    jq 'del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# deps.dev covers npm, NuGet, crates.io, Go, Maven, PyPI and RubyGems. For any
+# other ecosystem osv-scanner writes ["UNKNOWN"] without asking: a fact about
+# deps.dev, reported on every package of every scan if taken at its word.
+@test "an unknown licence in an ecosystem deps.dev does not cover is not reported" {
+    packages '[]'
+    for eco in Packagist Pub Hex ConanCenter; do
+        licensed /src/lockfile $eco some/pkg 1.0.0 '["UNKNOWN"]'
+        licensed_convert "MIT"
+        [ "$(sarif '.runs[0].results | length')" = 0 ] || { echo "$eco reported"; return 1; }
+    done
+    for eco in npm NuGet crates.io Go Maven PyPI RubyGems; do
+        licensed /src/lockfile $eco some-pkg 1.0.0 '["UNKNOWN"]'
+        licensed_convert "MIT"
+        [ "$(result .ruleId)" = license-unknown ] || { echo "$eco not reported"; return 1; }
+    done
+    # A licence the repository recorded with license.override is still judged.
+    licensed /src/composer.lock Packagist some/pkg 1.0.0 '["GPL-3.0-only"]'
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+}
+
+# deps.dev looks a package up by name and version on the public registry. For
+# a crate from another Cargo registry, or an npm package that is local or from
+# a private registry, that is a namesake's licence, not this package's.
+@test "a namesake's banned licence is no violation for another registry's or a local package" {
+    licensed /src/Cargo.lock crates.io private-crate 1.0.0 '["GPL-3.0-only"]'
+    for src in registry other; do
+        packages "[{\"path\":\"Cargo.lock\",\"name\":\"private-crate\",\"version\":\"1.0.0\",\"line\":5,\"source\":\"$src\"}]"
+        licensed_convert "MIT"
+        [ "$(sarif '.runs[0].results | length')" = 0 ] || { echo "cargo $src reported"; return 1; }
+    done
+    packages '[]'
+    for src in LOCAL PRIVATE_REGISTRY; do
+        licensed /src/js/package-lock.json npm my-app 1.0.0 '["GPL-3.0-only"]'
+        jq --arg s "$src" '.results[0].packages[0].package.purl = "pkg:npm/my-app@1.0.0?source=\($s)"' \
+            "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+        licensed_convert "MIT"
+        [ "$(sarif '.runs[0].results | length')" = 0 ] || { echo "npm $src reported"; return 1; }
+    done
+}
+
+# A crate the index should hold but does not - a Cargo.lock it could not read
+# line by line - is of unknown provenance: never taken for crates.io's.
+@test "a crate missing from its lockfile's index is not taken for crates.io's" {
+    packages '[{"path":"Cargo.lock","name":"other","version":"1.0.0","line":5,"source":"crates.io"}]'
+    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["GPL-3.0-only"]'
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    deprecated /src/Cargo.lock crates.io yamux 0.12.2
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    # A lockfile the index never saw is still reported, on line 1.
+    deprecated /src/other/Cargo.lock crates.io yamux 0.12.2
+    converted
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 1 ]
+}
+
+# The schema says an array of strings. An object or array where a string
+# should be is a format change, and reading it as UNKNOWN would quietly turn
+# every violation into a LOW: fail and name it.
+@test "a licence entry that is not a string or null fails, naming the package" {
+    packages '[]'
+    npm_packages '[]'
+    for lic in '[{"id":"GPL-3.0-only"}]' '[["GPL-3.0-only"]]' '{"id":"GPL-3.0-only"}' false '[true]' 1; do
+        licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 "$lic"
+        run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+            --arg licenses MIT "$TMP/osv.json"
+        [ "$status" -ne 0 ] || { echo "licenses: $lic passed"; return 1; }
+        [[ "$output" == *"polkadot-primitives@18.0.0"* ]]
+    done
+}
+
+# A tab or a newline in a name or path must not break the hash lookup: the
+# result would ship with a null fingerprint and the upload would reject it.
+@test "a fingerprint input with a tab or newline in it is still hashed" {
+    deprecated $'/src/a\tb/Cargo.lock' crates.io $'odd\nname' 1.0.0
+    fingerprinted
+    want="$(printf '%s' $'deprecated-package:file:///src/a%09b/Cargo.lock:odd\nname@1.0.0' | sha256sum | cut -d' ' -f1)"
+    [ "$(fp)" = "$want" ]
+}
+
+# The Cargo.lock index stores raw paths; the lookup must use the raw path too,
+# not the escaped location uri.
+@test "a lockfile under a directory that needs escaping still finds its index entry" {
+    deprecated '/src/a b/Cargo.lock' crates.io spin 0.9.8
+    packages '[{"path":"a b/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"path"}]'
+    converted
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    packages '[{"path":"a b/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"crates.io"}]'
+    converted
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
+    licensed '/src/a b/Cargo.lock' crates.io spin 0.9.8 '["UNKNOWN"]'
+    packages '[{"path":"a b/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"path"}]'
+    licensed_convert "MIT"
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }

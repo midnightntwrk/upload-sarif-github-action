@@ -49,11 +49,12 @@ allowed() {
 # deps.dev hands back pre-SPDX-3 spellings: `GPL-3.0+`, bare `LGPL-3.0`.
 @test "legacy spellings are normalised: X+ is X-or-later, bare GPL-x.y is -only" {
     [ "$(allowed "LGPL-3.0-or-later" "LGPL-3.0+" "LGPL-3.0-or-later" "LGPL-3.0")" = "true true false" ]
-    [ "$(allowed "LGPL-3.0-only" "LGPL-3.0" "LGPL-3.0-only" "LGPL-3.0+")" = "true true false" ]
+    # LGPL-3.0+ is now allowed here too: "or later" lets the licensee pick 3.0.
+    [ "$(allowed "LGPL-3.0-only" "LGPL-3.0" "LGPL-3.0-only" "LGPL-3.0+")" = "true true true" ]
     [ "$(allowed "GPL-3.0-only,gpl-3.0-or-later" "GPL-3.0" "GPL-3.0+")" = "true true" ]
 }
 
-# SPDX retired the one-token exception ids in 3.0; deps.dev still hands some
+# SPDX deprecated the one-token exception ids in licence-list 3.0; deps.dev still hands some
 # back. Each means its modern `base WITH exception` form.
 @test "a deprecated one-token exception id reads as its WITH form" {
     [ "$(allowed "GPL-2.0-only WITH Classpath-exception-2.0" "GPL-2.0-with-classpath-exception" "GPL-2.0-with-GCC-exception")" = "true false" ]
@@ -95,4 +96,35 @@ allowed() {
     [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; ["MIT", "Apache-2.0 OR MIT"] | package_allowed("MIT" | allowlist)')" = true ]
     [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; ["MIT", "GPL-3.0-only"] | package_allowed("MIT" | allowlist)')" = false ]
     [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; [] | package_allowed("MIT" | allowlist)')" = false ]
+}
+
+# "or later" lets the licensee pick any version from the base up, the base
+# included: an allowed X, X-only or X-or-later allows X-or-later.
+@test "an or-later licence is allowed when its base version is" {
+    [ "$(allowed "MPL-1.1" "MPL-1.1+" "MPL-1.1-or-later")" = "true true" ]
+    [ "$(allowed "GPL-2.0-only" "GPL-2.0-or-later" "GPL-2.0+")" = "true true" ]
+    [ "$(allowed "GPL-2.0-or-later" "GPL-2.0-only")" = false ]
+    [ "$(allowed "MIT" "MPL-1.1+")" = false ]
+}
+
+@test "a bare AGPL version reads as -only, like GPL and LGPL" {
+    [ "$(allowed "AGPL-3.0-only" "AGPL-3.0")" = true ]
+}
+
+# A placeholder that only blocks because it is a placeholder: true when the
+# expression would pass with it known, so the caller can say "unknown".
+@test "allowed_if_known treats a placeholder as satisfiable" {
+    run jq -rn -L "$ROOT/scripts" 'include "spdx"; "MIT AND non-standard", "GPL-3.0-only AND UNKNOWN", "MIT"
+        | allowed_if_known("MIT" | allowlist)' --args
+    [ "$(paste -sd' ' - <<<"$output")" = "true false true" ]
+}
+
+# The or-later rule holds inside a WITH compound too: the exception rides on
+# whichever version the licensee picks.
+@test "an or-later base inside WITH is allowed by its -only or bare compound" {
+    [ "$(allowed "GPL-2.0-only WITH Classpath-exception-2.0" \
+        "GPL-2.0+ WITH Classpath-exception-2.0" "GPL-2.0-or-later WITH Classpath-exception-2.0" \
+        "GPL-2.0-or-later WITH LLVM-exception")" = "true true false" ]
+    [ "$(allowed "GPL-2.0 WITH Classpath-exception-2.0" "GPL-2.0+ WITH Classpath-exception-2.0")" = true ]
+    [ "$(allowed "GPL-2.0-or-later WITH Classpath-exception-2.0" "GPL-2.0-only WITH Classpath-exception-2.0")" = false ]
 }

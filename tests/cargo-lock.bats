@@ -117,3 +117,53 @@ LOCK
     [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = crates.io ]
     [ "$(jq '[.[] | select(.name == "unused-patch")] | length' <<< "$output")" = 0 ]
 }
+
+@test "a sparse index other than crates.io is another registry; an unknown scheme is other" {
+    cat > "$TMP/Cargo.lock" <<'LOCK'
+version = 4
+
+[[package]]
+name = "sparse-private"
+version = "1.0.0"
+source = "sparse+https://cargo.example.com/index/"
+
+[[package]]
+name = "odd"
+version = "1.0.0"
+source = "future-scheme+https://example.com/x"
+LOCK
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.[] | select(.name == "sparse-private") | .source' <<< "$output")" = registry ]
+    [ "$(jq -r '.[] | select(.name == "odd") | .source' <<< "$output")" = other ]
+}
+
+# TOML allows any spacing around `=`, and a lockfile checked out with CRLF
+# endings is still the same lockfile. Missed, a crate falls out of the index.
+@test "CRLF line endings and spacing around = are read like the canonical form" {
+    printf 'version = 4\r\n\r\n[[package]]\r\nname = "spin"\r\nversion = "0.9.8"\r\nsource = "registry+https://github.com/rust-lang/crates.io-index"\r\n\r\n[[package]]\r\nname   =  "odd"\r\nversion="1.0.0"\r\nsource\t= "git+https://example.com/x#abc"\r\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .line, .source]]' <<< "$output")" \
+        = '[["spin","0.9.8",3,"crates.io"],["odd","1.0.0",8,"git"]]' ]
+}
+
+# TOML allows indentation too; Cargo never writes it, a hand edit might.
+@test "indented keys and headers are read like the canonical form" {
+    printf '  [[package]]\n  name = "spin"\n\tversion = "0.9.8"\n  source = "registry+https://github.com/rust-lang/crates.io-index"\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .line, .source]]' <<< "$output")" = '[["spin","0.9.8",1,"crates.io"]]' ]
+}
+
+# A trailing comment or blank after a value is valid TOML; a `#` inside the
+# quotes - a git source's commit - is part of the value.
+@test "a trailing comment or whitespace after a value is ignored" {
+    printf '[[package]]\nname = "spin" \nversion = "0.9.8"\t# pinned\nsource = "registry+https://github.com/rust-lang/crates.io-index" # crates.io\n\n[[package]]\nname = "g"\nversion = "1.0.0"\nsource = "git+https://example.com/x?tag=t#9c7455ea"\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .source]]' <<< "$output")" = '[["spin","0.9.8","crates.io"],["g","1.0.0","git"]]' ]
+}

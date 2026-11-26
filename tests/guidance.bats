@@ -67,8 +67,19 @@ one_high() {
     section="$(awk '/^## Fixing a failed scan$/ {p=1; next} /^## / {p=0} p' "$ROOT/AGENTS.md")"
     anchors="$(grep -o 'README.md#[a-z0-9-]*' <<<"$section" | sed 's/^README.md#//' | sort -u)"
     [ -n "$anchors" ]
-    slugs="$(grep '^#\{2,4\} ' "$ROOT/README.md" | sed 's/^#* //; s/[`.—#]//g' | tr 'A-Z ' 'a-z-')"
+    # GitHub's slug: lower case, drop all but letters, digits, space, - and _,
+    # then spaces become hyphens.
+    slugs="$(grep '^#\{2,4\} ' "$ROOT/README.md" | sed 's/^#* //' | tr 'A-Z' 'a-z' \
+        | LC_ALL=C sed 's/[^a-z0-9 _-]//g; s/ /-/g')"
     while read -r a; do
         grep -qx "$a" <<<"$slugs" || { echo "no README heading for anchor: $a"; return 1; }
     done <<<"$anchors"
+}
+
+# github.action_repository is empty inside a composite action's own steps
+# (actions/runner#2473); the link must not become https://github.com//blob/...
+@test "action.yml's guide link falls back to this repository" {
+    lines="$(grep -c 'GUIDE: .*github.action_repository' "$ROOT/action.yml")"
+    [ "$lines" -ge 1 ]
+    [ "$(grep 'GUIDE: ' "$ROOT/action.yml" | grep -vc "github.action_repository || 'midnightntwrk/upload-sarif-github-action'")" = 0 ]
 }

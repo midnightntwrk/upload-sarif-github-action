@@ -6,7 +6,8 @@
 #     "dev":false,"optional":true,"devOptional":false}, ...]
 #
 # `path` is relative to the root, `line` is the package's own entry - where a
-# SARIF region should point - and the three flags are the lockfile's. npm sets
+# SARIF region should point - and the three flags are the lockfile's (osv.jq
+# decides on `dev` alone; the other two are kept so the state is on record). npm sets
 # exactly one state per package: `dev` (reached through devDependencies
 # only), `optional` (through optionalDependencies only), `devOptional` (a dev
 # dependency that is also an optional dependency of a production one), or
@@ -17,7 +18,7 @@
 # of them ships, and the lockfile is the only record of which. npm-shrinkwrap.json
 # is the same format. A v1 lockfile (npm 6, 2020) has no `packages` table and
 # indexes as nothing: osv.jq then falls back to the groups, which may report an
-# optional dependency of a dev dependency. None of the fleet's 94 lockfiles is v1.
+# optional dependency of a dev dependency.
 set -euo pipefail
 
 root="${1:?usage: npm-lock-packages.sh <root>}"
@@ -25,12 +26,15 @@ cd "$root"
 
 index_one() {
     # The entry's line, keyed on its lockfile key; jq cannot see line numbers.
-    local lines
     # Any indentation, with or without the brace on the same line: the key is
     # the first quoted string on the line, and only a key names a node_modules
-    # path (a `resolved` URL is a value, behind its own key).
-    lines="$(awk '/^[ \t]*"[^"]*node_modules\/[^"]+"[ \t]*(:|$)/ { k = $0; sub(/^[ \t]*"/, "", k); sub(/".*$/, "", k); printf "%s\t%d\n", k, FNR }' "$1")"
-    jq -c --arg path "${1#./}" --arg lines "$lines" '
+    # path (a `resolved` URL is a value, behind its own key). Passed as a file,
+    # never an argument: Linux caps one argument at 128 KiB.
+    jq -c --arg path "${1#./}" --rawfile lines <(awk '
+        /^[ \t]*"[^"]*node_modules\/[^"]+"[ \t]*(:|$)/ {
+            k = $0; sub(/^[ \t]*"/, "", k); sub(/".*$/, "", k)
+            printf "%s\t%d\n", k, FNR
+        }' "$1") '
         ($lines | split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: (.[1] | tonumber)})
                 | from_entries) as $ln
         | [ (.packages // {}) | to_entries[]
@@ -43,7 +47,8 @@ index_one() {
                 # The boolean true and nothing else: a string "false" is truthy to jq.
                 dev: (.value.dev == true),
                 optional: (.value.optional == true),
-                devOptional: (.value.devOptional == true) } ]' "$1"
+                devOptional: (.value.devOptional == true) } ]' "$1" \
+        || { echo "::error::npm-lock-packages.sh: could not read $1 as JSON" >&2; return 1; }
 }
 
 find . \( -name package-lock.json -o -name npm-shrinkwrap.json \) -type f -not -path '*/node_modules/*' \

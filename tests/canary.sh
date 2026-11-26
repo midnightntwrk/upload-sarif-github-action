@@ -99,6 +99,24 @@ plant_defects() {
         printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n'
     } > "$d/rust/Cargo.lock"
 
+    # Licences, excused: the same GPL crate, in a directory whose
+    # osv-scanner.toml says license.ignore. osv-scanner drops the package's
+    # licences; it must be neither a violation nor an unknown. ring beside it
+    # is not excused and must still be reported: proof the directory was
+    # scanned, not merely missed.
+    mkdir -p "$d/rust-excused"
+    {
+        printf 'version = 4\n\n'
+        printf '[[package]]\nname = "polkadot-primitives"\nversion = "18.0.0"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n\n'
+        printf '[[package]]\nname = "ring"\nversion = "0.16.20"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n'
+    } > "$d/rust-excused/Cargo.lock"
+    printf '[[PackageOverrides]]\nname = "polkadot-primitives"\necosystem = "crates.io"\nlicense.ignore = true\nreason = "canary"\n' \
+        > "$d/rust-excused/osv-scanner.toml"
+
     # gitleaks: the PEM markers are assembled from parts so this file does not
     # itself contain the literal the scanner matches on.
     {
@@ -296,6 +314,21 @@ for p in "@subsquid/util-internal-hex@1.2.3 (dev)" "@substrate/connect@0.8.11 (d
         no "${p} is reported although it does not ship"
     fi
 done
+
+echo "== an excused licence is not reported at all =="
+excused='.runs[].results[] | select(.ruleId | startswith("license-"))
+    | select(.locations[0].physicalLocation.artifactLocation.uri | startswith("rust-excused/"))'
+if [ "$(jq "[$excused | select(.message.text | contains(\"polkadot-primitives\"))] | length" "$osv")" = 0 ]; then
+    ok "license.ignore clears polkadot-primitives: no violation, no unknown"
+else
+    no "an excused package is still reported" "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
+fi
+if [ "$(jq "[$excused | select(.message.text | contains(\"ring@0.16.20\"))] | length" "$osv")" = 1 ]; then
+    ok "and ring beside it is still reported: the directory was scanned"
+else
+    no "ring@0.16.20 in rust-excused/ is not reported: the excused check proves nothing" \
+        "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
+fi
 
 # The calibration is policy, and policy that only exists in jq drifts. These
 # assert the ceilings hold against real scanner output, not hand-written SARIF:

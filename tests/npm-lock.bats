@@ -108,3 +108,21 @@ JSON
     run index
     [ "$output" = "[]" ]
 }
+
+# The line map once went to jq as one argument; Linux caps a single argument
+# at 128 KiB, and a few thousand packages pass that.
+@test "a lockfile with thousands of packages is indexed" {
+    jq -n '{name: "big", lockfileVersion: 3, packages: ({"": {name: "big", version: "1.0.0"}}
+        + ([range(5000) as $i | {key: "node_modules/@some-long-scope-name/package-number-\($i)",
+                                value: {version: "1.0.0"}}] | from_entries))}' > "$TMP/js/package-lock.json"
+    run index
+    [ "$status" -eq 0 ]
+    [ "$(jq length <<<"$output")" = 5000 ]
+}
+
+@test "a malformed lockfile fails, naming the file" {
+    printf '{"packages": {' > "$TMP/js/package-lock.json"
+    run index
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"js/package-lock.json"* ]]
+}

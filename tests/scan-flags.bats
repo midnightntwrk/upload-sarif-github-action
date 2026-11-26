@@ -44,3 +44,33 @@ flags() {
     [ "$status" -eq 0 ]
     [ "$(tail -1 "$TMP/flags")" = "--LICENSES_ALLOWLIST=MIT, Apache-2.0, GPL-3.0-or-later WITH Classpath-exception-2.0" ]
 }
+
+@test "every flag line carries its own input" {
+    flags
+    [ "$status" -eq 0 ]
+    [ "$(cut -d= -f1 "$TMP/flags" | paste -sd' ' -)" = "--SCORECARD_CHECKS --SKIP_OPENGREP_SCAN --SKIP_SCORECARD_SCAN --SKIP_CHECKOV_SCAN --SKIP_ZIZMOR_SCAN --SKIP_TRIVY_SCAN --SKIP_GITLEAKS_SCAN --SKIP_OSV_SCAN --LICENSES_ALLOWLIST" ]
+}
+
+# A name the script writes but the step never sets would write an empty value,
+# and an empty --LICENSES_ALLOWLIST= overrides the Earthfile's default.
+@test "every name the script writes is set from an input in action.yml" {
+    names="$(sed -n '/^names=(/,/)/p' "$ROOT/scripts/scan-flags.sh" | sed 's/^names=(//; s/)$//')"
+    [ "$(wc -w <<<"$names" | tr -d ' ')" = 9 ]
+    [ -n "$names" ]
+    for n in $names; do
+        lower="$(tr 'A-Z' 'a-z' <<<"$n")"
+        grep -q "^ *$n: \${{ inputs.$lower }}" "$ROOT/action.yml" || { echo "action.yml does not set $n"; return 1; }
+    done
+}
+
+# An empty allowlist fails osv.jq inside earth, and a failed earth target
+# exports no SARIF at all: the log would read "No SARIF files produced". Say
+# what is wrong here, on the runner, where it is an annotation.
+@test "an empty or blank licences allowlist is refused on the runner" {
+    for v in "" "   " " , , "; do
+        LICENSES_ALLOWLIST="$v" flags
+        [ "$status" -ne 0 ] || { echo "'$v' accepted"; return 1; }
+        [[ "$output" == *"::error::"*"licenses_allowlist"*"none"* ]]
+        [ ! -e "$TMP/flags" ]
+    done
+}
