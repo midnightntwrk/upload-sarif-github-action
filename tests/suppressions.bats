@@ -69,7 +69,7 @@ two() {
 @test "a suppressed finding is named in the output, not hidden" {
     two "Opengrep OSS" python.lang.security.audit.eval-detected.eval-detected warning '[{"kind":"inSource"}]'
     count_findings "$TMP/r" low
-    [[ "$output" == *"1 finding(s) suppressed in source"* ]]
+    [[ "$output" == *"1 finding(s) suppressed (in source, or excused in osv-scanner.toml)"* ]]
     [[ "$output" == *"eval-detected"*"a.py"* ]]
 }
 

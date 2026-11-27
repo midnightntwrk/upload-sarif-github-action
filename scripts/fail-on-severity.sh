@@ -120,7 +120,7 @@ done
 
 [ "$unknown" -gt 0 ] && echo "$unknown finding(s) had a severity outside the known set and were not gated"
 if [ "$suppressed" -gt 0 ]; then
-    echo "$suppressed finding(s) suppressed in source (# nosemgrep, # checkov:skip=) and not counted:"
+    echo "$suppressed finding(s) suppressed (in source, or excused in osv-scanner.toml) and not counted:"
     printf '%s' "$suppressed_list"
 fi
 
