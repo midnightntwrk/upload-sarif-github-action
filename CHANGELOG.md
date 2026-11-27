@@ -36,10 +36,12 @@ and this project adheres to
   ones ship, so they are checked, read from `package-lock.json`'s
   own flags because osv-scanner's groups cannot tell an optional
   dependency of a dev dependency from a `devOptional` one.
-  A namesake (path or other-registry crate, local or private npm
-  package) is never judged, and a report with no licence data
-  for any package deps.dev covers fails the scan: that is what a
-  failed deps.dev lookup looks like.
+  A namesake (path or other-registry crate, an npm package a
+  `package-lock.json` did not resolve from the public registry)
+  is never judged; a package excused with `license.ignore` is
+  listed as a suppressed `license-excused`; a package-lock with
+  no public-registry package at all gets a `license-unchecked`
+  note.
   `none` turns the rules off. Across 64 midnightntwrk
   repositories the default flags 336 violations, almost all
   `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`
@@ -86,6 +88,20 @@ and this project adheres to
   already reads. Skip it with `skip_osv_scan: true`
 
 ### Fixed
+
+- **An osv.dev or deps.dev outage fails the scan instead of passing
+  it empty.** osv-scanner only logs a failed lookup and exits 1
+  ("found something") whenever anything else was found, so with any
+  deprecated package an osv.dev outage left no CVE or `MAL-*`
+  result and a green gate. The osv step now fails on that log line
+  (`scripts/osv-enrichers.sh`), and the canary proves it against the
+  pinned binary with each endpoint unreachable
+- **An unreadable lockfile is a finding, not a silent gap.**
+  osv-scanner logs a lockfile it cannot parse and scans the rest;
+  each is now a MEDIUM `lockfile-unreadable` at that lockfile
+- **No `deprecated-package` for an npm namesake.** A package a
+  `package-lock.json` resolved from a private registry, git or a
+  local path no longer inherits the public package's deprecation
 
 - **`# nosemgrep` and `# checkov:skip=` now clear the gate.** Both
   scanners report a suppressed finding anyway, marked

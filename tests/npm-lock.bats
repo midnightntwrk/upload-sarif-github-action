@@ -66,14 +66,55 @@ JSON
     [ "$(jq -r 'map(select(.name == "loose-envify")) | .[0].line' <<<"$output")" = "$(grep -n 'loose-envify' "$TMP/js/package-lock.json" | cut -d: -f1)" ]
 }
 
-@test "no lockfile, or a v1 lockfile with no packages table, is an empty index" {
+@test "no lockfile is an empty index" {
     run index
     [ "$status" -eq 0 ]
     [ "$output" = "[]" ]
-    echo '{"lockfileVersion": 1, "dependencies": {"react": {"version": "18.3.1"}}}' > "$TMP/js/package-lock.json"
+}
+
+# A v1 lockfile (npm 6) has no `packages` table: its nested `dependencies`
+# tree carries the same name, version, resolved and dev/optional flags, and
+# scalibr reads it too. Indexed the same way, at line 1 (no node_modules keys
+# to find); a bundled entry takes its parent's source.
+@test "a v1 lockfile's dependencies tree is indexed, nested ones included" {
+    cat > "$TMP/js/package-lock.json" <<'JSON'
+{
+  "lockfileVersion": 1,
+  "dependencies": {
+    "react": { "version": "18.3.1", "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+      "dependencies": {
+        "loose-envify": { "version": "1.4.0", "resolved": "https://npm.corp.example/loose-envify-1.4.0.tgz" }
+      } },
+    "corp": { "version": "2.0.0", "resolved": "https://npm.corp.example/corp/-/corp-2.0.0.tgz",
+      "dependencies": { "inner": { "version": "1.0.0", "bundled": true } } },
+    "jest": { "version": "29.0.0", "resolved": "https://registry.npmjs.org/jest/-/jest-29.0.0.tgz", "dev": true }
+  }
+}
+JSON
     run index
     [ "$status" -eq 0 ]
-    [ "$output" = "[]" ]
+    [ "$(jq -r 'map("\(.name)@\(.version)=\(.source),\(.dev),\(.line)") | sort | join(" ")' <<<"$output")" \
+        = "corp@2.0.0=other,false,1 inner@1.0.0=other,false,1 jest@29.0.0=npmjs,true,1 loose-envify@1.4.0=other,false,1 react@18.3.1=npmjs,false,1" ]
+}
+
+# A bundled package ships inside its parent's tarball, so it came from
+# wherever the parent did: a private parent's bundled dependency is private.
+@test "a bundled package takes its parent's source" {
+    cat > "$TMP/js/package-lock.json" <<'JSON'
+{
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "app", "version": "1.0.0" },
+    "node_modules/corp": { "version": "2.0.0", "resolved": "https://npm.corp.example/corp/-/corp-2.0.0.tgz" },
+    "node_modules/corp/node_modules/inner": { "version": "1.0.0", "inBundle": true },
+    "node_modules/pub": { "version": "1.0.0", "resolved": "https://registry.npmjs.org/pub/-/pub-1.0.0.tgz" },
+    "node_modules/pub/node_modules/dep": { "version": "1.0.0", "inBundle": true }
+  }
+}
+JSON
+    run index
+    [ "$status" -eq 0 ]
+    [ "$(jq -r 'map("\(.name)=\(.source)") | sort | join(" ")' <<<"$output")" = "corp=other dep=npmjs inner=other pub=npmjs" ]
 }
 
 # npm-shrinkwrap.json is the same format and osv-scanner reads it too.
@@ -120,9 +161,41 @@ JSON
     [ "$(jq length <<<"$output")" = 5000 ]
 }
 
-@test "a malformed lockfile fails, naming the file" {
-    printf '{"packages": {' > "$TMP/js/package-lock.json"
+# osv-scanner logs a lockfile it cannot parse and scans the rest; failing the
+# index here would fail the osv target and earth would export no SARIF at all.
+# Warn, naming the file, and leave it unindexed (osv.jq's fallback).
+@test "a malformed lockfile is skipped with a warning naming it; the others are indexed" {
+    lockfile
+    mkdir -p "$TMP/bad"
+    printf '{"packages": {' > "$TMP/bad/package-lock.json"
+    run bash -c "bash '$ROOT/scripts/npm-lock-packages.sh' '$TMP' 2>'$TMP/err'"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$TMP/err")" == *"::warning::"*"bad/package-lock.json"* ]]
+    [ "$(jq -r 'map(.path) | unique | join(" ")' <<<"$output")" = "js/package-lock.json" ]
+}
+
+# Where the lockfile resolved each install from. The npmjs registry (and
+# yarnpkg's mirror of it) is public; any other URL or git source is another
+# registry; file: is local. No resolved URL at all is the default registry:
+# npm's omit-lockfile-registry-resolved drops it for registry packages only,
+# and a bundled package ships inside its parent (scalibr calls both LOCAL).
+@test "each package records where the lockfile resolved it from" {
+    cat > "$TMP/js/package-lock.json" <<'JSON'
+{
+  "lockfileVersion": 3,
+  "packages": {
+    "": { "name": "app", "version": "1.0.0" },
+    "node_modules/pub": { "version": "1.0.0", "resolved": "https://registry.npmjs.org/pub/-/pub-1.0.0.tgz" },
+    "node_modules/yarn": { "version": "1.0.0", "resolved": "https://registry.yarnpkg.com/yarn/-/yarn-1.0.0.tgz" },
+    "node_modules/corp": { "version": "1.0.0", "resolved": "https://npm.corp.example/corp/-/corp-1.0.0.tgz" },
+    "node_modules/gitdep": { "version": "1.0.0", "resolved": "git+ssh://git@github.com/o/r.git#abc" },
+    "node_modules/loc": { "version": "1.0.0", "resolved": "file:../loc" },
+    "node_modules/bare": { "version": "1.0.0" }
+  }
+}
+JSON
     run index
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"js/package-lock.json"* ]]
+    [ "$status" -eq 0 ]
+    [ "$(jq -r 'map("\(.name)=\(.source)") | sort | join(" ")' <<<"$output")" \
+        = "bare=default corp=other gitdep=other loc=local pub=npmjs yarn=npmjs" ]
 }

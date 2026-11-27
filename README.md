@@ -313,25 +313,48 @@ read as the modern spellings.
   Read the package's own LICENSE and record what you found.
 
 A namesake is never a licence finding: a workspace or path
-crate, a crate from another Cargo registry, a local or
-private-registry npm package. deps.dev looks packages up on
-the public registry by name and version, so its answer is about
-an unrelated package that happens to share the name. A git
-fork is still judged on its upstream's licence. A package
-excused with `license.ignore = true` (below) is never reported
-either: osv-scanner drops its licences before the check sees
-it. No licence data at all for any package deps.dev covers
-fails the scan rather than passing it: that is what a failed
-deps.dev lookup looks like.
+crate, a crate from another Cargo registry, and - in a
+`package-lock.json` or `npm-shrinkwrap.json` - an npm package
+the lockfile resolved from anywhere but registry.npmjs.org or
+its yarnpkg.com mirror (a private registry, git, a local path).
+deps.dev looks packages up on the public registry by name and
+version, so its answer is about an unrelated package that
+happens to share the name. Two limits:
 
-Dev dependencies are never licence findings: nobody ships
-them. Optional dependencies are checked, because npm installs
+- `yarn.lock`, `pnpm-lock.yaml` and `bun.lock` do not record
+  where a package came from in a form the action reads, so their
+  packages are judged on the public registry's answer; excuse a
+  private one with `license.ignore`.
+- A Cargo git dependency is judged on the crates.io crate of the
+  same name and version: right for a fork (polkadot-sdk's keep
+  their licence), wrong for an unrelated crate that only shares
+  a name - excuse that one.
+
+An entry with no `resolved` URL (npm's
+`omit-lockfile-registry-resolved`, or a bundled package) comes
+from the default registry and is judged. A lockfile whose
+shipping packages all resolve outside the public registry - a
+registry proxy looks exactly like that - gets one
+`license-unchecked` note (listed, never gated) saying none of
+its licences could be checked.
+
+A package excused with `license.ignore = true` (below) is
+listed as `license-excused`, suppressed: shown in the summary,
+never gated. A lockfile osv-scanner could not parse is a MEDIUM
+`lockfile-unreadable` at that lockfile: osv-scanner only logs
+it, and none of its packages was checked. A failed osv.dev or deps.dev lookup fails the scan
+rather than passing it: osv-scanner logs it and carries on with
+no advisory, licence or deprecation data, and the action reads
+that log.
+
+Dev dependencies are skipped where the lockfile marks them:
+nobody ships them. Optional dependencies are checked, because npm installs
 one whenever it can (`fsevents`, `detect-libc`), so it ships.
 An optional dependency of a dev dependency (the esbuild
 platform binaries) is dev: `package-lock.json` marks it
 `dev` + `optional`, and the action reads the lockfile's own
-flags rather than osv-scanner's groups, which fold that state
-into the shipped `devOptional` one. The lockfile has to mark
+flags rather than osv-scanner's groups, which report that state
+and the shipped `devOptional` one as the same pair. The lockfile has to mark
 the dev tree, though - `package-lock.json`,
 `npm-shrinkwrap.json` and `pnpm-lock.yaml` up to v6 (pnpm 8) do;
 a v9 `pnpm-lock.yaml` (pnpm 9 on), `yarn.lock`, `bun.lock`
@@ -359,10 +382,10 @@ license.override = ["MIT"]
 A repository under a different licence, or whose policy differs,
 sets its own list: `licenses_allowlist: "MIT,Apache-2.0,MPL-2.0"`.
 Each entry is an SPDX id, or `id WITH exception`; an expression
-(`MIT OR Apache-2.0`) is refused. An `-or-later` licence passes
-when its base version is allowed. `none` turns licence findings
-off; an empty value fails the scan rather than silently doing
-the same.
+(`MIT OR Apache-2.0`) is refused, and so are `default` or
+`none` inside a list. An `-or-later` licence passes when its
+base version is allowed. `none` turns licence findings off; an
+empty value fails the scan rather than silently doing the same.
 
 For scorecard, suppression pays off in steps, not at once: the score is
 `10 - findings` floored at zero, and this action grades `0` as

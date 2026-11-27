@@ -25,6 +25,8 @@ this action rather than widening a waiver.
 | **osv-scanner** `deprecated-package` | Move to a version that is still published; a yank usually means a defect found before any advisory. | `[[PackageOverrides]]` `name`/`version`/`ecosystem` + `ignore = true` + `reason`. Legitimate when the newer version needs a toolchain you do not have yet. |
 | **osv-scanner** `license-violation` | Replace the dependency, or confirm it is a dev-only dependency the lockfile could not mark as such (an optional one ships, so it counts). | `[[PackageOverrides]]` `license.ignore = true` + `reason` (dev tool, separate process, exception you hold). Do **not** add the licence to `licenses_allowlist` to clear one package: that changes policy for the whole repository and needs the repository owner. |
 | **osv-scanner** `license-unknown` | Read the package's own LICENSE. | `[[PackageOverrides]]` `license.override = ["<SPDX id>"]` recording what you read. |
+| **osv-scanner** `lockfile-unreadable` | Fix the lockfile: osv-scanner could not parse it, so none of its packages was checked. Regenerate it with the ecosystem's tool. | A deliberately broken test fixture: move it out of the scanned tree, or leave the MEDIUM finding (it gates only at `fail_severity: medium`). |
+| **osv-scanner** `license-excused`, `license-unchecked` | Nothing to fix: both are listed and never gate. `license-excused` is a `license.ignore` you (or someone) wrote - check its `reason`. `license-unchecked` means a package-lock's shipping packages all come from outside the public npm registry (a private registry or a proxy), so no licence was checked. | - |
 | **trivy** CVE in a manifest | Upgrade, as above. | `.trivyignore`: the CVE id, with `# reason` and `exp:YYYY-MM-DD`. Mirror into `osv-scanner.toml` so the two scanners agree. |
 | **opengrep** rule | Change the code: the rule names the pattern. | `# nosemgrep: <full rule id>` on the line, with a comment saying why it is safe here. Never a bare `# nosemgrep`. |
 | **checkov** `CKV_*` | Fix the resource. | `# checkov:skip=<ID>:<reason>` inside the resource block. |
@@ -86,9 +88,14 @@ Security tab.
   take effect before osv.jq sees the package: `license.ignore` drops the
   package's `licenses` field, and osv.jq reads a package with no field as
   excused, never as unknown (tests/canary.sh proves it on the real binary).
-  A report where *no* deps.dev package has the field is an error, not "all
-  excused": osv-scanner's enricher writes none when its deps.dev lookup
-  fails. Never answer either by adding the licence to the allowlist "for
+  The excused package is still listed, as a suppressed `license-excused`.
+  A failed osv.dev or deps.dev lookup is an error, not "nothing found" or
+  "all excused": each enricher writes nothing when one request fails,
+  osv-scanner only logs it and exits 1 whenever anything else was found, and
+  a license.override still fills in its own package, so the JSON cannot
+  tell. `scripts/osv-enrichers.sh` fails the osv target on that log line;
+  `+osv-outage` (run by tests/canary.sh) proves the line against the pinned
+  binary. Never answer either by adding the licence to the allowlist "for
   now".
 
 When a suppression "does not work", check the raw SARIF before the comment:

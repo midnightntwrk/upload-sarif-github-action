@@ -39,10 +39,10 @@ def normalise:
     | if test("^(a?gpl|lgpl)-[0-9]+\\.[0-9]+$") then . + "-only" else . end
     | legacy_with[.] // .;
 
-# "MIT, Apache-2.0" -> {"mit": true, "apache-2.0": true}; a `WITH` item is one
-# key with single spaces.
 def list_items: split(",") | map(trim | select(length > 0));
 
+# "MIT, Apache-2.0" -> {"mit": true, "apache-2.0": true}; a `WITH` item is one
+# key with single spaces.
 def allowlist:
     list_items
     | map(if test("(^|\\s)(or|and)(\\s|$)|[()]"; "i")
@@ -77,8 +77,7 @@ def parse_expr($al; $ph):
               ([$t, $i + 1] | parse_expr($al; $ph)) as $r
               | if $r == null or $t[$r[1]] != ")" then null else [$r[0], $r[1] + 1] end
           elif $t[$i] == null or ($t[$i] | operator) then null
-          # deps.dev's placeholders for "could not tell": not licences, so an
-          # allowlist cannot name them into existence.
+          # Not licences, so an allowlist cannot name them into existence.
           elif ($t[$i] | placeholder) then [$ph, $i + 1]
           # A legacy id normalises to `base with exc`: allowed as its base or as
           # the exact compound, the same as a spelled-out WITH.
@@ -95,8 +94,9 @@ def parse_expr($al; $ph):
               elif $next == "with" then
                   # The exception has to be an identifier: `MIT WITH (` is broken,
                   # and a broken expression grants nothing, allowed base or not.
-                  if $t[$a[1] + 1] == null or ($t[$a[1] + 1] | operator) then null
-                  else ([$t[$i], "with", $t[$a[1] + 1]] | map(normalise) | join(" ")) as $compound
+                  $t[$a[1] + 1] as $exc
+                  | if $exc == null or ($exc | operator) then null
+                  else ([$t[$i], "with", $exc] | map(normalise) | join(" ")) as $compound
                        | [ ($a[0] or ($compound | id_allowed($al))), $a[1] + 2 ] end
               else $a end
           end;
@@ -119,7 +119,7 @@ def parse_expr($al; $ph):
       end;
 
 def evaluate($al; $ph):
-    (tokens) as $t
+    tokens as $t
     | if ($t | length) == 0 then false
       else ([$t, 0] | parse_expr($al; $ph)) as $r
         | $r != null and $r[1] == ($t | length) and $r[0]
@@ -131,8 +131,3 @@ def allowed_by($al): evaluate($al; false);
 # Would the expression pass if every placeholder in it were satisfied? True for
 # `MIT AND UNKNOWN` under MIT: unknown, not a violation.
 def allowed_if_known($al): evaluate($al; true);
-
-# ["expr", ...] -> true/false; deps.dev lists several when it found several,
-# and every one has to be satisfied. No licence at all is not allowed.
-def package_allowed($al):
-    if length == 0 then false else all(.[]; allowed_by($al)) end;

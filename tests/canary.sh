@@ -104,6 +104,11 @@ plant_defects() {
     # licences; it must be neither a violation nor an unknown. ring beside it
     # is not excused and must still be reported: proof the directory was
     # scanned, not merely missed.
+    # An unparseable lockfile beside real findings: osv-scanner logs it, exits
+    # 1 for the rest, and only the action's log reading makes it a finding.
+    mkdir -p "$d/broken"
+    printf '{"packages": {' > "$d/broken/package-lock.json"
+
     mkdir -p "$d/rust-excused"
     {
         printf 'version = 4\n\n'
@@ -259,6 +264,7 @@ osv      |osv-scanner.sarif       |deprecated-package.*js/package-lock\.json |ME
 osv      |osv-scanner.sarif       |license-violation.*rust/Cargo\.lock |HIGH
 osv      |osv-scanner.sarif       |license-violation.*js/package-lock\.json |HIGH
 osv      |osv-scanner.sarif       |license-unknown.*rust/Cargo\.lock   |LOW
+osv      |osv-scanner.sarif       |lockfile-unreadable.*broken/package-lock\.json |MEDIUM
 EXPECTED
 
 # ---------------------------------------------------------------------------
@@ -318,8 +324,9 @@ done
 echo "== an excused licence is not reported at all =="
 excused='.runs[].results[] | select(.ruleId | startswith("license-"))
     | select(.locations[0].physicalLocation.artifactLocation.uri | startswith("rust-excused/"))'
-if [ "$(jq "[$excused | select(.message.text | contains(\"polkadot-primitives\"))] | length" "$osv")" = 0 ]; then
-    ok "license.ignore clears polkadot-primitives: no violation, no unknown"
+if [ "$(jq "[$excused | select(.message.text | contains(\"polkadot-primitives\")) | select(.ruleId != \"license-excused\")] | length" "$osv")" = 0 ] \
+    && [ "$(jq "[$excused | select(.ruleId == \"license-excused\" and (.suppressions | length) > 0)] | length" "$osv")" = 1 ]; then
+    ok "license.ignore clears polkadot-primitives: listed as excused, no violation, no unknown"
 else
     no "an excused package is still reported" "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
 fi
@@ -329,6 +336,19 @@ else
     no "ring@0.16.20 in rust-excused/ is not reported: the excused check proves nothing" \
         "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
 fi
+
+echo "== an osv.dev or deps.dev outage fails the scan, never passes it empty =="
+# osv-scanner only logs a failed enricher and carries on; osv-enrichers.sh
+# fails on that log line. +osv-outage runs the pinned binary with one endpoint
+# unreachable and passes only when the line is there and the check fails on it,
+# so a reworded log after a scanner bump shows up here, not as a silent gate.
+for blocked in deps.dev osv.dev; do
+    if (cd "$ROOT" && earth --no-cache ./+osv-outage --BLOCK="$blocked") > "$work/outage-$blocked.log" 2>&1; then
+        ok "with $blocked unreachable the osv check fails"
+    else
+        no "with $blocked unreachable the osv check did not fail as expected" "$(tail -5 "$work/outage-$blocked.log")"
+    fi
+done
 
 # The calibration is policy, and policy that only exists in jq drifts. These
 # assert the ceilings hold against real scanner output, not hand-written SARIF:

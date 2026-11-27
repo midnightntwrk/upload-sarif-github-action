@@ -49,7 +49,7 @@ allowed() {
 # deps.dev hands back pre-SPDX-3 spellings: `GPL-3.0+`, bare `LGPL-3.0`.
 @test "legacy spellings are normalised: X+ is X-or-later, bare GPL-x.y is -only" {
     [ "$(allowed "LGPL-3.0-or-later" "LGPL-3.0+" "LGPL-3.0-or-later" "LGPL-3.0")" = "true true false" ]
-    # LGPL-3.0+ is now allowed here too: "or later" lets the licensee pick 3.0.
+    # "Or later" lets the licensee pick 3.0, so -only allows the + form too.
     [ "$(allowed "LGPL-3.0-only" "LGPL-3.0" "LGPL-3.0-only" "LGPL-3.0+")" = "true true true" ]
     [ "$(allowed "GPL-3.0-only,gpl-3.0-or-later" "GPL-3.0" "GPL-3.0+")" = "true true" ]
 }
@@ -89,13 +89,6 @@ allowed() {
 # SPDX separates tokens with whitespace, not only the space character.
 @test "tabs and runs of whitespace separate tokens" {
     [ "$(allowed "MIT" "$(printf 'MIT\tOR  GPL-3.0-only')" "$(printf 'MIT\n AND\tApache-2.0')")" = "true false" ]
-}
-
-# deps.dev gives a list; every entry has to be satisfied.
-@test "a package with several expressions needs all of them allowed" {
-    [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; ["MIT", "Apache-2.0 OR MIT"] | package_allowed("MIT" | allowlist)')" = true ]
-    [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; ["MIT", "GPL-3.0-only"] | package_allowed("MIT" | allowlist)')" = false ]
-    [ "$(jq -rn -L "$ROOT/scripts" 'include "spdx"; [] | package_allowed("MIT" | allowlist)')" = false ]
 }
 
 # "or later" lets the licensee pick any version from the base up, the base

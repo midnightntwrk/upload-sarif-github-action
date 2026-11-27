@@ -53,7 +53,7 @@ one_high() {
 @test "the guide covers every tool and every osv rule, and names the never-excused" {
     section="$(awk '/^## Fixing a failed scan$/ {p=1; next} /^## / {p=0} p' "$ROOT/AGENTS.md")"
     for word in gitleaks trivy opengrep checkov zizmor scorecard osv-scanner \
-                MAL- deprecated-package license-violation license-unknown \
+                MAL- deprecated-package license-violation license-unknown license-excused license-unchecked lockfile-unreadable \
                 '.gitleaks.toml' '.gitleaksignore' '.trivyignore' 'osv-scanner.toml' 'nosemgrep' \
                 'checkov:skip' 'zizmor: ignore' 'IgnoredVulns' 'PackageOverrides' 'licenses_allowlist'; do
         [[ "$section" == *"$word"* ]] || { echo "guide does not mention: $word"; return 1; }

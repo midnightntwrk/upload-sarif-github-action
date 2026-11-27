@@ -431,12 +431,19 @@ twins() {
 # licence on anything not from a public registry.
 
 # licensed <lockfile path> <ecosystem> <name> <version> <licence json array> [<groups json array>]
+#
+# The purl is shaped as scalibr writes it: a `source=` qualifier on npm
+# package-lock packages only (javascript/purl/purl.go), none anywhere else.
 licensed() {
     jq -n --arg path "$1" --arg eco "$2" --arg name "$3" --arg ver "$4" \
           --argjson lic "$5" --argjson groups "${6:-[]}" '
-        {results: [{source: {path: $path, type: "lockfile"},
+        ({"npm": "npm", "crates.io": "cargo", "PyPI": "pypi", "Go": "golang", "Maven": "maven",
+          "NuGet": "nuget", "RubyGems": "gem", "Packagist": "composer", "Pub": "pub", "Hex": "hex",
+          "ConanCenter": "conan"}[$eco] // "generic") as $type
+        | {results: [{source: {path: $path, type: "lockfile"},
             packages: [{package: {name: $name, version: $ver, ecosystem: $eco,
-                                  purl: "pkg:x/\($name)@\($ver)?source=PUBLIC_REGISTRY"},
+                                  purl: ("pkg:\($type)/\($name)@\($ver)"
+                                         + (if $eco == "npm" then "?source=PUBLIC_REGISTRY" else "" end))},
                         licenses: $lic}
                        + (if ($groups | length) > 0 then {dependency_groups: $groups} else {} end)]}]}' \
         > "$TMP/osv.json"
@@ -447,6 +454,7 @@ npm_packages() { printf '%s\n' "$1" > "$TMP/npm.json"; }
 
 # licensed_convert <allowlist> -- convert with the lockfile indexes and that allowlist
 licensed_convert() {
+    [ -f "$TMP/pkgs.json" ] || packages '[]'
     [ -f "$TMP/npm.json" ] || npm_packages '[]'
     convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" --arg licenses "$1"
 }
@@ -485,12 +493,13 @@ licensed_convert() {
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
-# npm installs an optional dependency whenever it can, so it ships: fsevents,
-# the esbuild platform binaries. Only a package reachable through dev
-# dependencies alone is nobody's compliance problem. package-lock.json marks a
-# package on both a dev path and an optional path `devOptional`, which
-# osv-scanner reports as both groups: it ships with the optional one.
-@test "a dev-only package is never a licence finding; an optional one is" {
+# Without the package-lock index (yarn, pnpm, bun, or no index), only
+# osv-scanner's groups are left. npm installs an optional dependency whenever
+# it can, so `optional` ships; `dev` alone does not. `dev` + `optional` is
+# either devOptional (ships) or an optional dependency of a dev dependency
+# (does not) - the groups cannot tell, so it is judged: a known false positive
+# the index removes (next test).
+@test "without the lockfile index: dev-only is skipped, optional and dev+optional are judged" {
     licensed /src/js/package-lock.json npm k6 0.0.0 '["AGPL-3.0"]' '["dev"]'
     packages '[]'
     licensed_convert "MIT"
@@ -572,13 +581,9 @@ licensed_convert() {
     [ "$(result .ruleId)" = license-unknown ]
 }
 
-# osv-scanner's schema says an array of strings; neither a null entry nor a
-# bare string must take the whole scan down.
-@test "a null or non-array licence field is treated as unknown, not as an error" {
-    licensed /src/js/package-lock.json npm c 1.0.0 '[null]'
+# A bare string where the list belongs is unambiguous: read it as one item.
+@test "a bare-string licence field is read as a one-item list" {
     packages '[]'
-    licensed_convert "MIT"
-    [ "$(result .ruleId)" = license-unknown ]
     licensed /src/js/package-lock.json npm d 1.0.0 '"UNKNOWN"'
     licensed_convert "MIT"
     [ "$(result .ruleId)" = license-unknown ]
@@ -641,14 +646,23 @@ licensed_convert() {
 # osv-scanner 2.7.0, real output: a package deps.dev knows nothing about comes
 # back as ["UNKNOWN"]; one excused with [[PackageOverrides]] license.ignore =
 # true comes back with no `licenses` key at all (the field is omitempty). The
-# excuse must clear the finding, not turn it into a LOW unknown. A licensed
+# excuse must clear the finding, not turn it into a LOW unknown - and it is
+# listed, never hidden: one `license-excused` result, suppressed (accepted,
+# external), at NOTE, which the gate shows and never counts. A licensed
 # package beside it: with no licence data anywhere the scan fails instead.
-@test "a package with no licences field was excused, and is not reported" {
+@test "a package with no licences field was excused: listed as suppressed, never gated" {
     licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 '["GPL-3.0-only"]'
     jq '.results[0].packages += [.results[0].packages[0] | .package.name = "serde" | .licenses = ["MIT"]]
         | del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
     packages '[]'
     licensed_convert "MIT"
+    [ "$(sarif '[.runs[0].results[].ruleId] | join(" ")')" = license-excused ]
+    [ "$(result .properties.severity)" = NOTE ]
+    [ "$(result '.suppressions[0] | "\(.kind) \(.status)"')" = "external accepted" ]
+    [[ "$(result .message.text)" == *"polkadot-primitives@18.0.0"*"license.ignore"* ]]
+    [ "$(jq -f "$SEVERITY_JQ" --argjson map "$SEVERITIES" --argjson threshold 0 "$TMP/r/osv.sarif" | jq '.hits | length')" = 0 ]
+    # Licences off: nothing was checked, so nothing was excused.
+    licensed_convert none
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
 
@@ -703,7 +717,7 @@ licensed_convert() {
 
 @test "an unknown licence from a private npm registry is not reported; a public one is" {
     licensed /src/js/package-lock.json npm corp-lib 1.0.0 '["UNKNOWN"]'
-    jq '.results[0].packages[0].package.purl = "pkg:npm/corp-lib@1.0.0?source=PRIVATE_REGISTRY"' \
+    jq '.results[0].packages[0].package.purl = "pkg:npm/corp-lib@1.0.0?source=OTHER"' \
         "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
     packages '[]'
     licensed_convert "MIT"
@@ -761,23 +775,20 @@ licensed_convert() {
     [[ "$output" == *"MIT OR Apache-2.0"* ]]
 }
 
-# osv-scanner's licence enricher returns before it writes a single licence when
-# its deps.dev request fails, so an outage looks exactly like "every package
-# excused". Licences on, a package deps.dev would answer for, and not one with
-# a licences field: fail, never pass the licence gate on no data.
-@test "a report with no licence data at all fails instead of passing the gate" {
+# A failed deps.dev lookup and "every package excused" look the same in the
+# JSON; scripts/osv-enrichers.sh tells them apart from osv-scanner's log and
+# fails the scan on the first. By the time osv.jq runs, a report where every
+# package lacks licences is a repository that excused them all: list each.
+@test "a report where every package is excused lists them all, and does not fail" {
     licensed /src/Cargo.lock crates.io a 1.0.0 '[]'
     jq 'del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
     packages '[]'
-    npm_packages '[]'
-    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
-        --arg licenses MIT "$TMP/osv.json"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"no licence data"* ]]
-    # Off, it is no business of this file.
+    licensed_convert "MIT"
+    [ "$(sarif '[.runs[0].results[].ruleId] | join(" ")')" = license-excused ]
     licensed_convert none
     [ "$(sarif '.runs[0].results | length')" = 0 ]
 }
+
 
 # One excused package beside one with data is the license.ignore case, not an
 # outage. Go's stdlib and ecosystems deps.dev does not cover never count.
@@ -786,12 +797,14 @@ licensed_convert() {
     jq '.results[0].packages += [.results[0].packages[0] | .package.name = "b" | del(.licenses)]' \
         "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
     packages '[]'
+    # Fine means nothing gated: the excuse itself is listed, suppressed.
+    open_results() { sarif '[.runs[0].results[] | select((.suppressions // []) | length == 0)] | length'; }
     licensed_convert "MIT"
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    [ "$(open_results)" = 0 ]
     licensed /src/go.mod Go stdlib 1.22.0 '[]'
     jq 'del(.results[0].packages[0].licenses)' "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
     licensed_convert "MIT"
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    [ "$(open_results)" = 0 ]
 }
 
 # deps.dev covers npm, NuGet, crates.io, Go, Maven, PyPI and RubyGems. For any
@@ -826,7 +839,9 @@ licensed_convert() {
         [ "$(sarif '.runs[0].results | length')" = 0 ] || { echo "cargo $src reported"; return 1; }
     done
     packages '[]'
-    for src in LOCAL PRIVATE_REGISTRY; do
+    # scalibr 0.5.4's npm purl `source`: PUBLIC_REGISTRY, OTHER (any other
+    # http or git source: a private registry, a git dependency) or LOCAL.
+    for src in LOCAL OTHER; do
         licensed /src/js/package-lock.json npm my-app 1.0.0 '["GPL-3.0-only"]'
         jq --arg s "$src" '.results[0].packages[0].package.purl = "pkg:npm/my-app@1.0.0?source=\($s)"' \
             "$TMP/osv.json" > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
@@ -837,30 +852,38 @@ licensed_convert() {
 
 # A crate the index should hold but does not - a Cargo.lock it could not read
 # line by line - is of unknown provenance: never taken for crates.io's.
-@test "a crate missing from its lockfile's index is not taken for crates.io's" {
+# osv-scanner and scripts/cargo-lock-packages.sh read the same [[package]]
+# list, so a crate missing from an indexed Cargo.lock means the index misread
+# the file. Skipping it would switch both rules off for that crate with no
+# trace; fail instead, naming the lockfile and the crate.
+@test "a crate missing from its lockfile's index fails, naming both" {
     packages '[{"path":"Cargo.lock","name":"other","version":"1.0.0","line":5,"source":"crates.io"}]'
-    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["UNKNOWN"]'
-    licensed_convert "MIT"
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
-    licensed /src/Cargo.lock crates.io yamux 0.12.2 '["GPL-3.0-only"]'
-    licensed_convert "MIT"
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    npm_packages '[]'
+    for lic in '["UNKNOWN"]' '["GPL-3.0-only"]'; do
+        licensed /src/Cargo.lock crates.io yamux 0.12.2 "$lic"
+        run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+            --arg licenses MIT "$TMP/osv.json"
+        [ "$status" -ne 0 ] || { echo "licenses $lic passed"; return 1; }
+        [[ "$output" == *"Cargo.lock"*"yamux@0.12.2"* ]]
+    done
     deprecated /src/Cargo.lock crates.io yamux 0.12.2
-    converted
-    [ "$(sarif '.runs[0].results | length')" = 0 ]
+    run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" "$TMP/osv.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"yamux@0.12.2"* ]]
     # A lockfile the index never saw is still reported, on line 1.
     deprecated /src/other/Cargo.lock crates.io yamux 0.12.2
     converted
     [ "$(result .locations[0].physicalLocation.region.startLine)" = 1 ]
 }
 
-# The schema says an array of strings. An object or array where a string
-# should be is a format change, and reading it as UNKNOWN would quietly turn
-# every violation into a LOW: fail and name it.
-@test "a licence entry that is not a string or null fails, naming the package" {
+# The schema says an array of strings ([]License, models/results.go). An
+# object, array, boolean, number or null where a string should be is a format
+# change, and reading it as UNKNOWN would quietly turn every violation into a
+# LOW: fail and name it.
+@test "a licence entry that is not a string fails, naming the package" {
     packages '[]'
     npm_packages '[]'
-    for lic in '[{"id":"GPL-3.0-only"}]' '[["GPL-3.0-only"]]' '{"id":"GPL-3.0-only"}' false '[true]' 1; do
+    for lic in '[{"id":"GPL-3.0-only"}]' '[["GPL-3.0-only"]]' '{"id":"GPL-3.0-only"}' false '[true]' 1 '[null]'; do
         licensed /src/Cargo.lock crates.io polkadot-primitives 18.0.0 "$lic"
         run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
             --arg licenses MIT "$TMP/osv.json"
@@ -892,4 +915,141 @@ licensed_convert() {
     packages '[{"path":"a b/Cargo.lock","name":"spin","version":"0.9.8","line":7,"source":"path"}]'
     licensed_convert "MIT"
     [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# scalibr calls any http registry URL with "npm" in it PUBLIC_REGISTRY, so a
+# private npm.corp.example or Artifactory .../api/npm/ reads as public. The
+# package-lock index records where the lockfile itself resolved each install
+# from, and that decides; the purl only where the index has no answer.
+@test "the lockfile's resolved registry decides public or namesake over the purl" {
+    packages '[]'
+    # Licence findings only: a lockfile with no public install also gets its
+    # license-unchecked note, tested on its own below.
+    judged() { sarif '[.runs[0].results[] | select(.ruleId != "license-unchecked")] | length'; }
+    entry() { npm_packages "[{\"path\":\"js/package-lock.json\",\"name\":\"lib\",\"version\":\"1.0.0\",\"line\":9,\"dev\":false,\"optional\":false,\"devOptional\":false,\"source\":\"$1\"}]"; }
+    for lic in '["GPL-3.0-only"]' '["UNKNOWN"]'; do
+        licensed /src/js/package-lock.json npm lib 1.0.0 "$lic"
+        for src in other local; do
+            entry $src
+            licensed_convert "MIT"
+            [ "$(judged)" = 0 ] || { echo "$lic from $src reported"; return 1; }
+        done
+        entry npmjs
+        licensed_convert "MIT"
+        [ "$(judged)" = 1 ] || { echo "$lic from npmjs not reported"; return 1; }
+    done
+    # Only installs that ship count: a dev-only public copy says nothing about
+    # the private one that ships.
+    npm_packages '[{"path":"js/package-lock.json","name":"lib","version":"1.0.0","line":9,"dev":true,"optional":false,"devOptional":false,"source":"npmjs"},
+                   {"path":"js/package-lock.json","name":"lib","version":"1.0.0","line":20,"dev":false,"optional":false,"devOptional":false,"source":"other"}]'
+    licensed /src/js/package-lock.json npm lib 1.0.0 '["GPL-3.0-only"]'
+    licensed_convert "MIT"
+    [ "$(judged)" = 0 ]
+    # No resolved URL (omit-lockfile-registry-resolved, bundled): the default
+    # registry, judged - although scalibr writes source=LOCAL for it.
+    entry default
+    licensed /src/js/package-lock.json npm lib 1.0.0 '["GPL-3.0-only"]'
+    jq '.results[0].packages[0].package.purl = "pkg:npm/lib@1.0.0?source=LOCAL"' "$TMP/osv.json" > "$TMP/x.json" \
+        && mv "$TMP/x.json" "$TMP/osv.json"
+    licensed_convert "MIT"
+    [ "$(result .ruleId)" = license-violation ]
+    # No index entry at all (yarn, pnpm, bun): the purl decides.
+    npm_packages '[]'
+    jq '.results[0].packages[0].package.purl = "pkg:npm/lib@1.0.0?source=OTHER"' "$TMP/osv.json" > "$TMP/x.json" \
+        && mv "$TMP/x.json" "$TMP/osv.json"
+    licensed_convert "MIT"
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# A lockfile whose shipping npm installs all resolve outside the public
+# registry - a registry proxy reads exactly like that - has every licence
+# skipped as a namesake. Say so once per lockfile, at NOTE: listed, never gated.
+@test "a lockfile with no public-registry install says its licences went unchecked" {
+    packages '[]'
+    npm_packages '[{"path":"js/package-lock.json","name":"a","version":"1.0.0","line":5,"dev":false,"optional":false,"devOptional":false,"source":"other"},
+                   {"path":"js/package-lock.json","name":"b","version":"1.0.0","line":9,"dev":false,"optional":false,"devOptional":false,"source":"other"},
+                   {"path":"js/package-lock.json","name":"t","version":"1.0.0","line":12,"dev":true,"optional":false,"devOptional":false,"source":"npmjs"}]'
+    licensed /src/js/package-lock.json npm a 1.0.0 '["GPL-3.0-only"]'
+    jq '.results[0].packages += [.results[0].packages[0] | .package.name = "b" | .licenses = ["MIT"]]' "$TMP/osv.json" \
+        > "$TMP/x.json" && mv "$TMP/x.json" "$TMP/osv.json"
+    licensed_convert "MIT"
+    [ "$(sarif '[.runs[0].results[] | .ruleId] | join(" ")')" = license-unchecked ]
+    [ "$(result .properties.severity)" = NOTE ]
+    [ "$(result .locations[0].physicalLocation.artifactLocation.uri)" = js/package-lock.json ]
+    [[ "$(result .message.text)" == *"2 "*"registry.npmjs.org"* ]]
+    # One public install in the lockfile: the ordinary case, no note.
+    npm_packages '[{"path":"js/package-lock.json","name":"a","version":"1.0.0","line":5,"dev":false,"optional":false,"devOptional":false,"source":"other"},
+                   {"path":"js/package-lock.json","name":"b","version":"1.0.0","line":9,"dev":false,"optional":false,"devOptional":false,"source":"npmjs"}]'
+    licensed_convert "MIT"
+    [ "$(sarif '[.runs[0].results[] | select(.ruleId == "license-unchecked")] | length')" = 0 ]
+    # Licences off: nothing to say.
+    licensed_convert none
+    [ "$(sarif '.runs[0].results | length')" = 0 ]
+}
+
+# deps.dev's deprecation flag is keyed on name and version too: a private or
+# local npm package inherits a public namesake's deprecation.
+@test "a deprecated npm namesake from outside the public registry is not reported" {
+    deprecated /src/js/package-lock.json npm left-pad 1.3.0
+    packages '[]'
+    for src in other local; do
+        npm_packages "[{\"path\":\"js/package-lock.json\",\"name\":\"left-pad\",\"version\":\"1.3.0\",\"line\":7,\"dev\":false,\"optional\":false,\"devOptional\":false,\"source\":\"$src\"}]"
+        convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json"
+        [ "$(sarif '.runs[0].results | length')" = 0 ] || { echo "$src reported"; return 1; }
+    done
+    npm_packages '[{"path":"js/package-lock.json","name":"left-pad","version":"1.3.0","line":7,"dev":false,"optional":false,"devOptional":false,"source":"npmjs"}]'
+    convert --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json"
+    [ "$(result .ruleId)" = deprecated-package ]
+    [ "$(result .locations[0].physicalLocation.region.startLine)" = 7 ]
+}
+
+# `default` names the whole list; inside a comma list it would be read as a
+# licence id that matches nothing, silently dropping the default list.
+@test "default or none inside a list is refused" {
+    licensed /src/Cargo.lock crates.io a 1.0.0 '["MIT"]'
+    packages '[]'
+    npm_packages '[]'
+    for v in "default,GPL-3.0-only" "MIT, none"; do
+        run jq -L "$ROOT/scripts" -f "$OSV_JQ" --slurpfile packages "$TMP/pkgs.json" --slurpfile npm "$TMP/npm.json" \
+            --arg licenses "$v" --rawfile default_licenses "$ROOT/scripts/license-allowlist.txt" "$TMP/osv.json"
+        [ "$status" -ne 0 ] || { echo "'$v' accepted"; return 1; }
+        [[ "$output" == *"licenses_allowlist"* ]]
+    done
+}
+
+# osv-scanner logs a lockfile it cannot parse and scans the rest, and exits 1
+# whenever anything else was found, so the lockfile would drop out unseen. With
+# its log (--rawfile osv_log) each one is a MEDIUM `lockfile-unreadable` at
+# that lockfile. The lines are verbatim from osv-scanner v2.7.0 (paths relative
+# to /, as in the container); the enricher lines are osv-enrichers.sh's.
+osv_log() {
+    printf '%s\n' 'Scanning dir .' \
+        'Error during extraction: (extracting as javascript/packagelockjson) src/js/package-lock.json: could not extract: unexpected end of JSON input' \
+        'Error during extraction: (extracting as rust/cargolock) src/rust/Cargo.lock: could not extract: toml: line 3 (last key "package.version"): unexpected EOF; expected value' \
+        'Error during extraction: (extracting as license/depsdev) failed to get version information max retries exhausted' \
+        > "$TMP/osv.log"
+}
+
+@test "a lockfile osv-scanner could not read is a MEDIUM finding at that lockfile" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    osv_log
+    convert --rawfile osv_log "$TMP/osv.log"
+    [ "$(sarif '[.runs[0].results[] | select(.ruleId == "lockfile-unreadable") | .locations[0].physicalLocation.artifactLocation.uri] | join(" ")')" \
+        = "js/package-lock.json rust/Cargo.lock" ]
+    [ "$(sarif '[.runs[0].results[] | select(.ruleId == "lockfile-unreadable") | .properties.severity] | unique | join(" ")')" = MEDIUM ]
+    [[ "$(sarif '.runs[0].results[] | select(.ruleId == "lockfile-unreadable") | .message.text' | head -1)" == *"unexpected end of JSON input"* ]]
+    bash "$FINGERPRINTS" < "$TMP/r/osv.sarif" > /dev/null
+    # No log given: nothing to say.
+    convert
+    [ "$(sarif '[.runs[0].results[] | select(.ruleId == "lockfile-unreadable")] | length')" = 0 ]
+}
+
+# More than one failed file per extractor is logged as a header line and one
+# tab-indented `path: error` line each (osv-scanner scan.go logPluginStatus).
+@test "several unreadable lockfiles under one extractor are each a finding" {
+    report /src/Cargo.lock smallvec 1.6.0 CVE-2021-25900 9.8
+    printf 'Error during extraction: (extracting as javascript/packagelockjson) \n\tsrc/a/package-lock.json: bad\n\tsrc/b/package-lock.json: worse\n' > "$TMP/osv.log"
+    convert --rawfile osv_log "$TMP/osv.log"
+    [ "$(sarif '[.runs[0].results[] | select(.ruleId == "lockfile-unreadable") | .locations[0].physicalLocation.artifactLocation.uri] | join(" ")')" \
+        = "a/package-lock.json b/package-lock.json" ]
 }

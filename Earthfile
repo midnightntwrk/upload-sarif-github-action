@@ -388,7 +388,7 @@ osv:
     COPY +user-source/src /src
     COPY scripts/osv.jq scripts/spdx.jq scripts/license-allowlist.txt /scripts/
     COPY scripts/cargo-lock-packages.sh scripts/npm-lock-packages.sh /scripts/
-    COPY scripts/sarif-fingerprints.sh /scripts/sarif-fingerprints.sh
+    COPY scripts/sarif-fingerprints.sh scripts/osv-enrichers.sh /scripts/
     RUN mkdir -p /output && chown -R scanner:scanner /output /src /home/scanner
     USER scanner
     # SPDX allowlist for the licence rules: `default` is scripts/license-allowlist.txt
@@ -405,8 +405,8 @@ osv:
     # with no advisory is exactly the case worth reporting. scripts/osv.jq
     # writes the SARIF from the JSON - same rule ids and messages as upstream,
     # so existing code-scanning alerts keep their identity.
-    # --x-flag-deprecated-packages: one deps.dev lookup per package, about
-    # 2.5s more on a 1,600-crate lockfile.
+    # --x-flag-deprecated-packages: deps.dev lookups in batches, about 2.5s
+    # more on a 1,600-crate lockfile.
     # --licenses --all-packages: deps.dev's licence expression for every
     # package, clean ones included (otherwise the JSON lists only packages
     # with something to report). The allowlist is applied by scripts/osv.jq
@@ -420,11 +420,16 @@ osv:
     # the repo actually pins is scanned.
     # --allow-no-lockfiles: otherwise a repo with no manifests exits 128 and
     # writes no SARIF. Exit 1 = vulnerabilities found (gated downstream); any
-    # other non-zero is a real error. A repo's osv-scanner.toml is honoured.
+    # other non-zero is a real error - but osv-scanner returns 1 before it
+    # looks at the errors it logged, so osv-enrichers.sh reads that log. A
+    # repo's osv-scanner.toml is honoured.
+    # stderr is kept (and echoed) for osv-enrichers.sh: a failed deps.dev
+    # enricher is only logged, and its data is then silently missing.
     RUN osv-scanner scan source -r --allow-no-lockfiles --no-resolve --no-call-analysis=all \
             --x-flag-deprecated-packages --all-packages --licenses \
-            --format json --output-file /output/osv.json . ; \
-        rc=$?; [ $rc -le 1 ] || exit $rc
+            --format json --output-file /output/osv.json . 2> /output/osv-stderr.log; \
+        rc=$?; cat /output/osv-stderr.log >&2; [ $rc -le 1 ] || exit $rc; \
+        bash /scripts/osv-enrichers.sh /output/osv-stderr.log "$LICENSES_ALLOWLIST"
 
     # Where each crate sits in its Cargo.lock, and whether it came from
     # crates.io: deps.dev matches on name and version alone, so a git fork,
@@ -432,8 +437,10 @@ osv:
     # licence of the crates.io release with the same name and version.
     RUN bash /scripts/cargo-lock-packages.sh /src > /output/cargo-lock-packages.json
     # Where each npm package sits in its package-lock.json and the lockfile's
-    # own dev/optional/devOptional flags: osv-scanner's groups fold "optional
-    # dependency of a dev dependency" into "devOptional", and only one ships.
+    # own dev/optional/devOptional flags: osv-scanner's groups report an
+    # optional dependency of a dev dependency and a devOptional one as the
+    # same pair, and only the second ships. Also where each install resolved
+    # from, which decides whether deps.dev's answer is about it at all.
     RUN bash /scripts/npm-lock-packages.sh /src > /output/npm-lock-packages.json
 
     # Malware CRITICAL, CVEs banded by CVSS, a yanked or deprecated package
@@ -444,10 +451,40 @@ osv:
             --slurpfile npm /output/npm-lock-packages.json \
             --arg version "$(osv-scanner --version | sed -n 's/^osv-scanner version: //p')" \
             --arg licenses "$LICENSES_ALLOWLIST" --rawfile default_licenses /scripts/license-allowlist.txt \
+            --rawfile osv_log /output/osv-stderr.log \
             /output/osv.json > /output/osv-unhashed.sarif && \
         bash /scripts/sarif-fingerprints.sh < /output/osv-unhashed.sarif > /output/osv-scanner.sarif
 
     SAVE ARTIFACT /output/osv-scanner.sarif AS LOCAL scan_reports/osv-scanner.sarif
+
+# Canary only (tests/canary.sh): the pinned osv-scanner with one endpoint made
+# unreachable - HTTPS_PROXY to a closed port, NO_PROXY for the other host -
+# must log the line scripts/osv-enrichers.sh fails on, and the check must fail.
+# Passes only when it does, so a log reworded by a scanner bump fails here.
+osv-outage:
+    # renovate: datasource=docker packageName=ubuntu
+    FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+    COPY +osv-bin/osv-scanner /usr/local/bin/osv-scanner
+    RUN chmod 0755 /usr/local/bin/osv-scanner
+    COPY scripts/osv-enrichers.sh /scripts/
+    ARG --required BLOCK
+    WORKDIR /probe
+    RUN printf 'version = 4\n\n[[package]]\nname = "serde"\nversion = "1.0.200"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' > Cargo.lock
+    RUN case "$BLOCK" in \
+            deps.dev) keep=api.osv.dev; name=license/depsdev ;; \
+            osv.dev)  keep=api.deps.dev; name=vulnmatch/osvdev ;; \
+            *) echo "BLOCK must be deps.dev or osv.dev, got $BLOCK"; exit 2 ;; \
+        esac; \
+        HTTPS_PROXY=http://127.0.0.1:9 NO_PROXY="$keep" \
+            osv-scanner scan source -r --no-resolve --no-call-analysis=all --x-flag-deprecated-packages \
+            --all-packages --licenses --format json --output-file /tmp/osv.json . 2> /tmp/osv-stderr.log; \
+        cat /tmp/osv-stderr.log; \
+        grep -F "(extracting as $name)" /tmp/osv-stderr.log \
+            || { echo "no '(extracting as $name)' line: osv-scanner's log changed, update scripts/osv-enrichers.sh"; exit 1; }; \
+        if bash /scripts/osv-enrichers.sh /tmp/osv-stderr.log default; then \
+            echo "osv-enrichers.sh passed a $BLOCK outage"; exit 1; \
+        fi
 
 gitleaks-bin:
     # Tiny downloader stage; hash check is the trust anchor.

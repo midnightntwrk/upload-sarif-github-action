@@ -3,8 +3,8 @@
 # Read by osv.jq when `licenses_allowlist` is `default`. SPDX identifiers, one
 # per line, matched case-insensitively against each package's licence
 # expression (OR / AND / WITH / parentheses - see scripts/spdx.jq). An allowed
-# base licence allows its `WITH` exceptions; a banned base needs the exact
-# `X WITH exception` line.
+# base licence allows its `WITH` exceptions; a banned base needs its
+# `X WITH exception` line (for an X-or-later base, the X or X-only line does).
 #
 # The split is the Apache Software Foundation's third-party licence policy,
 # https://www.apache.org/legal/resolved.html: Category A (permissive) and
