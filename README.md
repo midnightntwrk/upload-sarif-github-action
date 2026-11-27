@@ -241,7 +241,7 @@ reason = "dev-only dependency, never reaches a runtime image"
 
 [[IgnoredVulns]]
 id = "CVE-2019-11324"
-ignoreUntil = 2026-11-09
+effectiveUntil = 2026-11-09
 reason = "upstream caps aiohttp <3.14.0; lift when it widens"
 ```
 

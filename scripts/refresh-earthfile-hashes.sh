@@ -22,7 +22,7 @@ sha256() {
 TARGETS=(
   "Earthfile|BATS_VERSION|https://github.com/bats-core/bats-core/archive/refs/tags/{V}.tar.gz"
   "Earthfile|JQ_VERSION|https://github.com/jqlang/jq/releases/download/jq-{V}/jq-linux-arm64|https://github.com/jqlang/jq/releases/download/jq-{V}/jq-linux-amd64"
-  "Earthfile|OPENGREP_VERSION|https://github.com/opengrep/opengrep/releases/download/{V}/opengrep_manylinux_aarch64|https://github.com/opengrep/opengrep/releases/download/{V}/opengrep_manylinux_x86"
+  "Earthfile|OPENGREP_VERSION|https://github.com/opengrep/opengrep/releases/download/{V}/opengrep_linux_aarch64|https://github.com/opengrep/opengrep/releases/download/{V}/opengrep_linux_x86"
   "Earthfile|SCORECARD_VERSION|https://github.com/ossf/scorecard/releases/download/v{V}/scorecard_{V}_linux_arm64.tar.gz|https://github.com/ossf/scorecard/releases/download/v{V}/scorecard_{V}_linux_amd64.tar.gz"
   "Earthfile|TRIVY_VERSION|https://github.com/aquasecurity/trivy/releases/download/v{V}/trivy_{V}_Linux-ARM64.tar.gz|https://github.com/aquasecurity/trivy/releases/download/v{V}/trivy_{V}_Linux-64bit.tar.gz"
   "Earthfile|GITLEAKS_VERSION|https://github.com/gitleaks/gitleaks/releases/download/v{V}/gitleaks_{V}_linux_arm64.tar.gz|https://github.com/gitleaks/gitleaks/releases/download/v{V}/gitleaks_{V}_linux_x64.tar.gz"

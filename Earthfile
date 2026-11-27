@@ -137,15 +137,15 @@ opengrep-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=opengrep/opengrep
-    ARG OPENGREP_VERSION=v1.32.0
+    ARG OPENGREP_VERSION=v2.1.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
-            DIST="opengrep_manylinux_aarch64"; \
-            HASH="dc6229319c0d68948733053786a5614873947e5ec1d4669cc0e94ae9038cb99d"; \
+            DIST="opengrep_linux_aarch64"; \
+            HASH="3abfc87d66f208efd143a1b408d489af934cea7d9968ab1f37dca001f9886092"; \
         else \
-            DIST="opengrep_manylinux_x86"; \
-            HASH="7360d60174880bd9214f2dfbe439b7bce82b7a3d44cfe945ba833c85cc8bda75"; \
+            DIST="opengrep_linux_x86"; \
+            HASH="d6a68a84c01a3d8ee933f60847decf1b4d0fd7791a26833b32b95922baf28974"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o opengrep \
             "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/${DIST}" && \
@@ -155,9 +155,12 @@ opengrep-bin:
 opengrep:
     # renovate: datasource=docker packageName=ubuntu
     FROM ubuntu:24.04@sha256:561618e2c15bf2397621dd04f96926663a3b5616c189cf7e38db7e82f5c538ea
-    # No apt at runtime: opengrep is a PyInstaller bundle that ships its
-    # own certifi, so it can validate TLS to the rule registry without
-    # the system ca-certificates package.
+    # opengrep 2 is a native binary (no bundled Python, no certifi) that fetches
+    # its rules from semgrep.dev over TLS at scan time: it needs the CA bundle,
+    # and /etc/services to resolve the https scheme ("resolution failed:
+    # unknown scheme" without it). The two lines netbase would provide, not apt.
+    COPY +ca-certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+    RUN printf 'http\t\t80/tcp\t\twww\nhttps\t\t443/tcp\n' > /etc/services
     WORKDIR /src
 
     COPY +opengrep-bin/opengrep /usr/local/bin/opengrep
@@ -178,15 +181,15 @@ scorecard-bin:
     # renovate: datasource=docker packageName=curlimages/curl
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
     # renovate: datasource=github-releases packageName=ossf/scorecard
-    ARG SCORECARD_VERSION=5.6.0
+    ARG SCORECARD_VERSION=5.7.0
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             ARCH="arm64"; \
-            HASH="3eacaceb3fdee6d0ba5df6ede45d1ada73321949029921bb63633802e8ec5951"; \
+            HASH="4e1e472e629689aff5877ddf160e3df0d0bc9a94694342d91b17a5f3f83581e2"; \
         else \
             ARCH="amd64"; \
-            HASH="19bde07129450cb65a95c6e3b9f34e034341579e6f0e241546ec3ae6efb2dd9a"; \
+            HASH="3b08ec0a8681806c3e744ec9210742a502c7d66f06f25523b70f7128738235d3"; \
         fi && \
         curl -fsSL --retry 3 --retry-delay 5 -o scorecard.tar.gz \
             "https://github.com/ossf/scorecard/releases/download/v${SCORECARD_VERSION}/scorecard_${SCORECARD_VERSION}_linux_${ARCH}.tar.gz" && \
@@ -262,7 +265,7 @@ checkov-requirements:
     # asteval is pinned ==1.0.6 by checkov itself, so its bumps (sandbox-escape
     # GHSAs fixed in 1.0.9) cannot land here until checkov moves that pin.
     # renovate: datasource=pypi packageName=checkov
-    ARG CHECKOV_VERSION=3.3.30
+    ARG CHECKOV_VERSION=3.4.11
     # Floor the transitive GitPython at its latest CVE fix (CVE-2026-114145,
     # fixed in 3.2.1), so a checkov cap fails the resolve instead of regressing.
     RUN printf 'checkov==%s\ngitpython>=3.2.1\n' "${CHECKOV_VERSION}" > /tmp/requirements.in && \
@@ -304,15 +307,15 @@ trivy-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=aquasecurity/trivy
-    ARG TRIVY_VERSION=0.76.1
+    ARG TRIVY_VERSION=0.76.2
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="trivy_${TRIVY_VERSION}_Linux-ARM64.tar.gz"; \
-            HASH="e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f"; \
+            HASH="ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3"; \
         else \
             DIST="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"; \
-            HASH="c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0"; \
+            HASH="bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o trivy.tar.gz \
             "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${DIST}" && \
@@ -356,15 +359,15 @@ osv-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=google/osv-scanner
-    ARG OSV_SCANNER_VERSION=v2.7.0
+    ARG OSV_SCANNER_VERSION=v2.7.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="osv-scanner_linux_arm64"; \
-            HASH="4061ef4c021ed3c47f203b818f337e351336cc5cd67c0274fc36bd1dfc728dd7"; \
+            HASH="983d22fbad9724514e3fcc6acc83b5fa64c5ffa6b0d9f510028f22c1b223ff81"; \
         else \
             DIST="osv-scanner_linux_amd64"; \
-            HASH="160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b"; \
+            HASH="fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o osv-scanner \
             "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/${DIST}" && \
@@ -498,15 +501,15 @@ zizmor-bin:
     FROM curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
 
     # renovate: datasource=github-releases packageName=zizmorcore/zizmor
-    ARG ZIZMOR_VERSION=v1.31.1
+    ARG ZIZMOR_VERSION=v1.33.1
     ARG TARGETARCH
     WORKDIR /tmp
     RUN if [ "$TARGETARCH" = "arm64" ]; then \
             DIST="zizmor-aarch64-unknown-linux-gnu.tar.gz"; \
-            HASH="37eebbd5762a44f262d94875431b14a6d2402991e90a685113ea97b8b41be833"; \
+            HASH="aa487c792a7cbbe86e4f8dccd3b66de33b3b51813c090aaa0842d7ea08a3fc35"; \
         else \
             DIST="zizmor-x86_64-unknown-linux-gnu.tar.gz"; \
-            HASH="d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99"; \
+            HASH="3e6a301c7a820a2501915f5a9de8c0486da82bdec7965f068477538a98743d43"; \
         fi && \
         curl -kfsSL --retry 3 --retry-delay 5 -o zizmor.tar.gz \
             "https://github.com/zizmorcore/zizmor/releases/download/${ZIZMOR_VERSION}/${DIST}" && \

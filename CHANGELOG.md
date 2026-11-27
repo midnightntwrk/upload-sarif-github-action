@@ -63,6 +63,18 @@ and this project adheres to
 
 ### Changed
 
+- **Scanners bumped to their latest releases, each checked against its
+  publisher's signature or provenance before pinning:** trivy 0.76.2
+  (security release: x/net and go-jose fixes in the binary), osv-scanner
+  v2.7.1, scorecard 5.7.0 (both SLSA provenance), zizmor v1.33.1 (GitHub
+  attestation; only collects inputs GitHub Actions would use), opengrep
+  v2.1.0 (cosign; a native binary now, so its image gets the CA bundle and
+  an `/etc/services` for https) and checkov 3.4.11 (PyPI Trusted
+  Publishing). osv-scanner's display ids and fingerprints were re-checked
+  against v2.7.1's own SARIF and are unchanged. `osv-scanner.toml` waivers
+  use `effectiveUntil`; `ignoreUntil` still works but is deprecated in
+  osv-scanner 2.7.1 and the scorecard that embeds it
+
 - **`fail_severity` defaults to `high`, was `critical`.** A HIGH
   CVE in a lockfile, an opengrep `error` at medium confidence or
   a scorecard check scoring 0 now fails a repository that sets
