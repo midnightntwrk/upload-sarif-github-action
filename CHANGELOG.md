@@ -11,6 +11,42 @@ and this project adheres to
 
 ### Added
 
+- **A failed gate links to the fixing guide.** The gate's log line,
+  the `::error::` annotation and the job summary all point at
+  `AGENTS.md#fixing-a-failed-scan`: one table of how each kind of
+  finding is fixed, how one is excused when it must be, and the
+  three that never are (a committed secret, a `MAL-*` package, a
+  known-vulnerable action). Written for whoever is about to make
+  the build green, agent or person. The suite checks the anchor
+  exists and that the guide names every tool and rule
+
+- **Dependency licences are findings.** osv-scanner now reports
+  every package's licence (deps.dev's) and `scripts/osv.jq`
+  checks it against `licenses_allowlist`: a package outside the
+  list is a HIGH `license-violation`, one deps.dev cannot license
+  a LOW `license-unknown` (public-registry packages only). The
+  default list, `scripts/license-allowlist.txt`, is what an
+  Apache-2.0 project may depend on, after the ASF third-party
+  licence policy, plus LGPL (linked, not modified) and
+  polkadot-sdk's `GPL-3.0-or-later WITH Classpath-exception-2.0`.
+  SPDX expressions are evaluated in `scripts/spdx.jq` - OR, AND, WITH, parentheses, legacy
+  spellings - because osv-scanner's own allowlist rejects any
+  `WITH` form and never matches one against its base. Dev-only
+  packages are skipped where the lockfile marks them; optional
+  ones ship, so they are checked, read from `package-lock.json`'s
+  own flags because osv-scanner's groups cannot tell an optional
+  dependency of a dev dependency from a `devOptional` one.
+  A namesake (path or other-registry crate, an npm package a
+  `package-lock.json` did not resolve from the public registry)
+  is never judged; a package excused with `license.ignore` is
+  listed as a suppressed `license-excused`; a package-lock with
+  no public-registry package at all gets a `license-unchecked`
+  note.
+  `none` turns the rules off. Across 64 midnightntwrk
+  repositories the default flags 336 violations, almost all
+  `@subsquid/*` (GPL-3.0-or-later) and `@substrate/connect`
+  (GPL-3.0-only) under compact-js and polkadot-js
+
 - **Yanked and deprecated packages are findings.** osv-scanner
   now runs with `--x-flag-deprecated-packages`, and a version the
   registry has withdrawn - yanked on crates.io or PyPI,
@@ -53,6 +89,20 @@ and this project adheres to
 
 ### Fixed
 
+- **An osv.dev or deps.dev outage fails the scan instead of passing
+  it empty.** osv-scanner only logs a failed lookup and exits 1
+  ("found something") whenever anything else was found, so with any
+  deprecated package an osv.dev outage left no CVE or `MAL-*`
+  result and a green gate. The osv step now fails on that log line
+  (`scripts/osv-enrichers.sh`), and the canary proves it against the
+  pinned binary with each endpoint unreachable
+- **An unreadable lockfile is a finding, not a silent gap.**
+  osv-scanner logs a lockfile it cannot parse and scans the rest;
+  each is now a MEDIUM `lockfile-unreadable` at that lockfile
+- **No `deprecated-package` for an npm namesake.** A package a
+  `package-lock.json` resolved from a private registry, git or a
+  local path no longer inherits the public package's deprecation
+
 - **`# nosemgrep` and `# checkov:skip=` now clear the gate.** Both
   scanners report a suppressed finding anyway, marked
   `suppressions: inSource` as SARIF asks; GitHub's Security tab
@@ -63,6 +113,14 @@ and this project adheres to
 
 ### Changed
 
+- **BREAKING: licence checks are on by default.**
+  `licenses_allowlist` defaults to `default`, a violation is HIGH
+  and `fail_severity` defaults to `high`, so a repository with a
+  dependency outside the list fails on upgrade. Excuse one package
+  with `[[PackageOverrides]] license.ignore = true` and a reason,
+  set a list of your own, or opt out with
+  `licenses_allowlist: none`. An empty value now fails the scan
+  instead of switching checks off. Ships as 2.0.0
 - **`fail_severity` defaults to `high`, was `critical`.** A HIGH
   CVE in a lockfile, an opengrep `error` at medium confidence or
   a scorecard check scoring 0 now fails a repository that sets

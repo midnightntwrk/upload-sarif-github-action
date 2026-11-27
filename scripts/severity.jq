@@ -10,7 +10,7 @@
 #     "findings": [ "HIGH  rule-id  path: message", ... ],
 #     "unmapped": [ "UNKNOWN (rule-id)", ... ],
 #     "ignores":  [ "path:rule-id:line", ... ],
-#     "suppressed":   <results suppressed in source - named, never counted>,
+#     "suppressed":   <results suppressed in source or by a scanner config - named, never counted>,
 #     "suppressions": [ "rule-id  path:line", ... ] }
 #
 # Formatting the lines here rather than in the caller is deliberate: the shell
