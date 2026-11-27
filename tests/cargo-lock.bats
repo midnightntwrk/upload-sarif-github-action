@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 #
 # scripts/cargo-lock-packages.sh: every [[package]] in every Cargo.lock under a
-# root, with the line it starts on and whether it comes from crates.io. osv.jq
-# uses the line to place a deprecated-package finding and the crates_io flag to
-# drop a crate - git, path or another registry - that merely shares a name and
-# version with a yanked crates.io release.
+# root, with the line it starts on and where it comes from: crates.io, another
+# registry, git or path. osv.jq uses the line to place a finding, `crates.io`
+# to report a yanked release only when the crate really is crates.io's (not a
+# git, path or other-registry twin of the same name and version), and the
+# source to keep non-crates.io packages out of the unknown-licence rule.
 
 load helper
 
@@ -50,12 +51,12 @@ LOCK
     [ "$(jq -r '.[] | select(.name == "local-crate") | .line' <<< "$output")" = 18 ]
 }
 
-@test "marks crates.io packages and nothing else" {
+@test "records where each package comes from: crates.io, registry, git or path" {
     lockfile Cargo.lock
     run bash "$SCRIPT" "$TMP"
-    [ "$(jq -r '.[] | select(.name == "spin") | .crates_io' <<< "$output")" = true ]
-    [ "$(jq -r '.[] | select(.name == "sp-api-proc-macro") | .crates_io' <<< "$output")" = false ]
-    [ "$(jq -r '.[] | select(.name == "local-crate") | .crates_io' <<< "$output")" = false ]
+    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = crates.io ]
+    [ "$(jq -r '.[] | select(.name == "sp-api-proc-macro") | .source' <<< "$output")" = git ]
+    [ "$(jq -r '.[] | select(.name == "local-crate") | .source' <<< "$output")" = path ]
 }
 
 # crates.io is written as the git index URL even when fetched over the sparse
@@ -76,8 +77,8 @@ source = "registry+https://example.com/private-index"
 LOCK
     run bash "$SCRIPT" "$TMP"
     [ "$status" -eq 0 ]
-    [ "$(jq -r '.[] | select(.name == "sparse-crate") | .crates_io' <<< "$output")" = true ]
-    [ "$(jq -r '.[] | select(.name == "private-crate") | .crates_io' <<< "$output")" = false ]
+    [ "$(jq -r '.[] | select(.name == "sparse-crate") | .source' <<< "$output")" = crates.io ]
+    [ "$(jq -r '.[] | select(.name == "private-crate") | .source' <<< "$output")" = registry ]
 }
 
 @test "paths are relative to the root, for every lockfile under it" {
@@ -112,7 +113,57 @@ LOCK
     run bash "$SCRIPT" "$TMP"
     [ "$status" -eq 0 ]
     [ "$(jq 'length' <<< "$output")" = 3 ]
-    [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.crates_io)"' <<< "$output")" = "0.1.0 18 false" ]
-    [ "$(jq -r '.[] | select(.name == "spin") | .crates_io' <<< "$output")" = true ]
+    [ "$(jq -r '.[] | select(.name == "local-crate") | "\(.version) \(.line) \(.source)"' <<< "$output")" = "0.1.0 18 path" ]
+    [ "$(jq -r '.[] | select(.name == "spin") | .source' <<< "$output")" = crates.io ]
     [ "$(jq '[.[] | select(.name == "unused-patch")] | length' <<< "$output")" = 0 ]
+}
+
+@test "a sparse index other than crates.io is another registry; an unknown scheme is other" {
+    cat > "$TMP/Cargo.lock" <<'LOCK'
+version = 4
+
+[[package]]
+name = "sparse-private"
+version = "1.0.0"
+source = "sparse+https://cargo.example.com/index/"
+
+[[package]]
+name = "odd"
+version = "1.0.0"
+source = "future-scheme+https://example.com/x"
+LOCK
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.[] | select(.name == "sparse-private") | .source' <<< "$output")" = registry ]
+    [ "$(jq -r '.[] | select(.name == "odd") | .source' <<< "$output")" = other ]
+}
+
+# TOML allows any spacing around `=`, and a lockfile checked out with CRLF
+# endings is still the same lockfile. Missed, a crate falls out of the index.
+@test "CRLF line endings and spacing around = are read like the canonical form" {
+    printf 'version = 4\r\n\r\n[[package]]\r\nname = "spin"\r\nversion = "0.9.8"\r\nsource = "registry+https://github.com/rust-lang/crates.io-index"\r\n\r\n[[package]]\r\nname   =  "odd"\r\nversion="1.0.0"\r\nsource\t= "git+https://example.com/x#abc"\r\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .line, .source]]' <<< "$output")" \
+        = '[["spin","0.9.8",3,"crates.io"],["odd","1.0.0",8,"git"]]' ]
+}
+
+# TOML allows indentation too; Cargo never writes it, a hand edit might.
+@test "indented keys and headers are read like the canonical form" {
+    printf '  [[package]]\n  name = "spin"\n\tversion = "0.9.8"\n  source = "registry+https://github.com/rust-lang/crates.io-index"\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .line, .source]]' <<< "$output")" = '[["spin","0.9.8",1,"crates.io"]]' ]
+}
+
+# A trailing comment or blank after a value is valid TOML; a `#` inside the
+# quotes - a git source's commit - is part of the value.
+@test "a trailing comment or whitespace after a value is ignored" {
+    printf '[[package]]\nname = "spin" \nversion = "0.9.8"\t# pinned\nsource = "registry+https://github.com/rust-lang/crates.io-index" # crates.io\n\n[[package]]\nname = "g"\nversion = "1.0.0"\nsource = "git+https://example.com/x?tag=t#9c7455ea"\n' \
+        > "$TMP/Cargo.lock"
+    run bash "$SCRIPT" "$TMP"
+    [ "$status" -eq 0 ]
+    [ "$(jq -c '[.[] | [.name, .version, .source]]' <<< "$output")" = '[["spin","0.9.8","crates.io"],["g","1.0.0","git"]]' ]
 }

@@ -7,6 +7,52 @@ their SARIF. Every scanner's output passes through one gate
 this repo has had is the same shape: **a scanner that looks like it is working
 while gating nothing.** Assume that failure first.
 
+## Fixing a failed scan
+
+You are here because a scan in **another** repository failed and its log
+linked this section. Make it green the right way: fix first, excuse second,
+and never excuse the three at the bottom. Every excuse carries a **reason a
+reviewer would accept** and, where the format allows, an **expiry**; the
+reason goes in the file, not in the PR description. If a finding is a false
+positive from the scanner itself, say so in the reason and open an issue on
+this action rather than widening a waiver.
+
+| Finding (as the log names it) | Fix first | Excuse one finding, if you must |
+| ----------------------------- | --------- | ------------------------------- |
+| **gitleaks** `generic-api-key`, `private-key`, ... | Rotate the credential. It is in git history, so it is compromised whatever happens to this PR. Then remove it. | Test fixtures and documented placeholders only: `.gitleaks.toml` `[[allowlists]]` with `paths` (a directory) or `.gitleaksignore` (one fingerprint per line, printed in the log). Keep the finding's `targetRules` narrow. |
+| **osv-scanner** `MAL-*` | Remove the package. Assume every machine that installed it is compromised. | Never. |
+| **osv-scanner** CVE / GHSA / RUSTSEC | Upgrade the package in the lockfile with the ecosystem's tool (`cargo update -p`, `npm update`, ...), never by hand. | `osv-scanner.toml` next to that lockfile: `[[IgnoredVulns]]` with the OSV id (RUSTSEC-/GHSA-/PYSEC-, not the CVE alias), `reason` and `ignoreUntil`. Legitimate when the vulnerable code is unreachable (say why) or the fix is not released yet. |
+| **osv-scanner** `deprecated-package` | Move to a version that is still published; a yank usually means a defect found before any advisory. | `[[PackageOverrides]]` `name`/`version`/`ecosystem` + `ignore = true` + `reason`. Legitimate when the newer version needs a toolchain you do not have yet. |
+| **osv-scanner** `license-violation` | Replace the dependency, or confirm it is a dev-only dependency the lockfile could not mark as such (an optional one ships, so it counts). | `[[PackageOverrides]]` `license.ignore = true` + `reason` (dev tool, separate process, exception you hold). Do **not** add the licence to `licenses_allowlist` to clear one package: that changes policy for the whole repository and needs the repository owner. |
+| **osv-scanner** `license-unknown` | Read the package's own LICENSE. | `[[PackageOverrides]]` `license.override = ["<SPDX id>"]` recording what you read. |
+| **osv-scanner** `lockfile-unreadable` | Fix the lockfile: osv-scanner could not parse it, so none of its packages was checked. Regenerate it with the ecosystem's tool. | A deliberately broken test fixture: move it out of the scanned tree, or leave the MEDIUM finding (it gates only at `fail_severity: medium`). |
+| **osv-scanner** `license-excused`, `license-unchecked` | Nothing to fix: both are listed and never gate. `license-excused` is a `license.ignore` you (or someone) wrote - check its `reason`. `license-unchecked` means a package-lock's shipping packages all come from outside the public npm registry (a private registry or a proxy), so no licence was checked. | - |
+| **trivy** CVE in a manifest | Upgrade, as above. | `.trivyignore`: the CVE id, with `# reason` and `exp:YYYY-MM-DD`. Mirror into `osv-scanner.toml` so the two scanners agree. |
+| **opengrep** rule | Change the code: the rule names the pattern. | `# nosemgrep: <full rule id>` on the line, with a comment saying why it is safe here. Never a bare `# nosemgrep`. |
+| **checkov** `CKV_*` | Fix the resource. | `# checkov:skip=<ID>:<reason>` inside the resource block. |
+| **zizmor** `template-injection`, `dangerous-triggers`, ... | Fix the workflow: `env:` indirection for expressions, pin actions by SHA, drop `pull_request_target`. | `# zizmor: ignore[<rule>]` on the line, or `.github/zizmor.yml` `rules.<rule>.ignore: [file.yml]`, with a comment on why the trigger is safe (e.g. the job checks the commenter's permission first). |
+| **zizmor** `known-vulnerable-actions` | Bump the action to the fixed release. | Never: the advisory is against the action you are running. |
+| **scorecard** `Dangerous-Workflow`, `Pinned-Dependencies`, ... | Do what the check says; each is a score, and the score moves one finding at a time. | Decline a whole check via `scorecard_checks` only when it cannot apply to the repository, and say why in the workflow. |
+
+Never excuse: a committed secret (rotate it), a `MAL-*` package (remove it),
+a `known-vulnerable-actions` finding (bump it). Each of those is a fact about
+something already exposed, and a waiver only hides the exposure.
+
+Do not raise `fail_severity`, turn `differential_gate` off, or set
+`skip_<scanner>_scan` to pass a PR. Those are repository policy, owned by the
+people who set them; propose the change to them separately.
+
+Copy-ready examples of every waiver file above are in the README under
+[Per-tool calibration](README.md#per-tool-calibration); the
+`osv-scanner.toml` ones, including `PackageOverrides` for yanked packages and
+licences, are under
+[osv-scanner and scorecard](README.md#osv-scanner-and-scorecard--osv-scannertoml).
+
+Verify before pushing: the waiver must clear the **gate**, not only GitHub's
+Security tab - see the next section. `jq '.runs[].results[] | {ruleId,
+suppressions}' scan_reports/<tool>.sarif` shows what the scanner actually
+emitted.
+
 ## Suppressions: the gate must agree with the scanner
 
 A scanner's in-source suppression has to clear the **gate**, not just GitHub's
@@ -36,6 +82,21 @@ Security tab.
   no advisory id, so `IgnoredVulns` cannot excuse it; `[[PackageOverrides]]`
   with `ignore = true` on the name and version can, and drops the package
   from the vulnerability report too.
+- A `license-violation` is excused per package with `[[PackageOverrides]]`
+  `license.ignore = true`; a `license-unknown` is answered with
+  `license.override = ["<SPDX id>"]`. Both are osv-scanner's own config and
+  take effect before osv.jq sees the package: `license.ignore` drops the
+  package's `licenses` field, and osv.jq reads a package with no field as
+  excused, never as unknown (tests/canary.sh proves it on the real binary).
+  The excused package is still listed, as a suppressed `license-excused`.
+  A failed osv.dev or deps.dev lookup is an error, not "nothing found" or
+  "all excused": each enricher writes nothing when one request fails,
+  osv-scanner only logs it and exits 1 whenever anything else was found, and
+  a license.override still fills in its own package, so the JSON cannot
+  tell. `scripts/osv-enrichers.sh` fails the osv target on that log line;
+  `+osv-outage` (run by tests/canary.sh) proves the line against the pinned
+  binary. Never answer either by adding the licence to the allowlist "for
+  now".
 
 When a suppression "does not work", check the raw SARIF before the comment:
 `jq '.runs[].results[] | {ruleId, suppressions}' scan_reports/<tool>.sarif`.
@@ -45,9 +106,13 @@ When a suppression "does not work", check the raw SARIF before the comment:
 SARIF `level` tops out at `error`, so it can never mean CRITICAL. Each tool's
 real signal is mapped in its own jq, not in shared code: `secrets-severity.jq`
 (gitleaks → CRITICAL), `scorecard.jq`, `osv.jq` (`MAL-*` → CRITICAL, CVSS
-bands, deprecated → MEDIUM; it also *writes* osv-scanner's SARIF from the JSON
-report, because upstream's drops deprecated-only packages), and per-tool
-`calibrate` in `severity.jq`. Change a mapping only with a
+bands, deprecated → MEDIUM, licence violation → HIGH, licence unknown → LOW;
+it also *writes* osv-scanner's SARIF from the JSON report, because upstream's
+drops deprecated-only packages and carries no licences), `spdx.jq` (the
+allowlist matcher - osv-scanner's own cannot express a `WITH` exception), and
+per-tool `calibrate` in `severity.jq`. The default allowlist is
+`scripts/license-allowlist.txt`; change it with a reason in the commit and a
+test in `tests/license-allowlist.bats`. Change a mapping only with a
 test in `tests/calibration.bats` or the tool's own `.bats`.
 
 ## Alert identity is a contract

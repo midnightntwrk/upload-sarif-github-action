@@ -292,7 +292,7 @@ summary() {
        "locations":[{"physicalLocation":{"artifactLocation":{"uri":"main.tf"},"region":{"startLine":2}}}]}]}]}' \
         > "$TMP/r/checkov.sarif"
     summary "$TMP/r" high
-    [[ "$output" == *"1 finding(s) suppressed in source"* ]]
+    [[ "$output" == *"1 finding(s) suppressed (in source, or excused in osv-scanner.toml)"* ]]
     [[ "$output" == *'`checkov` CKV_AWS_20  main.tf:2'* ]]
     [[ "$output" != *"at or above HIGH"*"CKV_AWS_20"*"| HIGH"* ]]
 }

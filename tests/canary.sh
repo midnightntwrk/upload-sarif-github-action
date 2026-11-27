@@ -67,9 +67,14 @@ plant_defects() {
     # matches nothing against it.
     # Beside it, request@2.88.2: deprecated on npm, no advisory - the
     # deprecated-package rule is the only thing that can name it.
+    # Licences, three GPL-3.0 packages the fleet really carries: scale-codec
+    # ships and must be reported; util-internal-hex is dev-only and
+    # @substrate/connect is an optional dependency of a dev dependency - npm's
+    # `dev` + `optional` - and neither ships. Pretty-printed so each entry has
+    # a line of its own to point at.
     mkdir -p "$d/js"
-    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1","request":"2.88.2"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"},"node_modules/request":{"version":"2.88.2","resolved":"https://registry.npmjs.org/request/-/request-2.88.2.tgz"}}}' \
-        > "$d/js/package-lock.json"
+    printf '%s\n' '{"name":"canary","version":"1.0.0","lockfileVersion":3,"requires":true,"packages":{"":{"name":"canary","version":"1.0.0","dependencies":{"flatmap-stream":"0.1.1","request":"2.88.2","@subsquid/scale-codec":"4.0.1"},"devDependencies":{"@subsquid/util-internal-hex":"1.2.3"}},"node_modules/flatmap-stream":{"version":"0.1.1","resolved":"https://registry.npmjs.org/flatmap-stream/-/flatmap-stream-0.1.1.tgz"},"node_modules/request":{"version":"2.88.2","resolved":"https://registry.npmjs.org/request/-/request-2.88.2.tgz"},"node_modules/@subsquid/scale-codec":{"version":"4.0.1","resolved":"https://registry.npmjs.org/@subsquid/scale-codec/-/scale-codec-4.0.1.tgz"},"node_modules/@subsquid/util-internal-hex":{"version":"1.2.3","resolved":"https://registry.npmjs.org/@subsquid/util-internal-hex/-/util-internal-hex-1.2.3.tgz","dev":true,"optionalDependencies":{"@substrate/connect":"0.8.11"}},"node_modules/@substrate/connect":{"version":"0.8.11","resolved":"https://registry.npmjs.org/@substrate/connect/-/connect-0.8.11.tgz","dev":true,"optional":true}}}' \
+        | jq . > "$d/js/package-lock.json"
 
     # osv-scanner, yanked crates: spin 0.9.8 is yanked on crates.io and has no
     # advisory. The second entry is yanked on crates.io too, but this lockfile
@@ -82,8 +87,40 @@ plant_defects() {
         printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
         printf 'checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"\n\n'
         printf '[[package]]\nname = "sp-api-proc-macro"\nversion = "15.0.0"\n'
-        printf 'source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2609#9c7455ea"\n'
+        printf 'source = "git+https://github.com/paritytech/polkadot-sdk.git?tag=polkadot-stable2609#9c7455ea"\n\n'
+        # Licences: polkadot-primitives is GPL-3.0-only on crates.io, outside
+        # the default allowlist; ring 0.16.20 carries licence text deps.dev
+        # cannot map to an SPDX id ("non-standard").
+        printf '[[package]]\nname = "polkadot-primitives"\nversion = "18.0.0"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n\n'
+        printf '[[package]]\nname = "ring"\nversion = "0.16.20"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n'
     } > "$d/rust/Cargo.lock"
+
+    # Licences, excused: the same GPL crate, in a directory whose
+    # osv-scanner.toml says license.ignore. osv-scanner drops the package's
+    # licences; it must be neither a violation nor an unknown. ring beside it
+    # is not excused and must still be reported: proof the directory was
+    # scanned, not merely missed.
+    # An unparseable lockfile beside real findings: osv-scanner logs it, exits
+    # 1 for the rest, and only the action's log reading makes it a finding.
+    mkdir -p "$d/broken"
+    printf '{"packages": {' > "$d/broken/package-lock.json"
+
+    mkdir -p "$d/rust-excused"
+    {
+        printf 'version = 4\n\n'
+        printf '[[package]]\nname = "polkadot-primitives"\nversion = "18.0.0"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n\n'
+        printf '[[package]]\nname = "ring"\nversion = "0.16.20"\n'
+        printf 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+        printf 'checksum = "0000000000000000000000000000000000000000000000000000000000000000"\n'
+    } > "$d/rust-excused/Cargo.lock"
+    printf '[[PackageOverrides]]\nname = "polkadot-primitives"\necosystem = "crates.io"\nlicense.ignore = true\nreason = "canary"\n' \
+        > "$d/rust-excused/osv-scanner.toml"
 
     # gitleaks: the PEM markers are assembled from parts so this file does not
     # itself contain the literal the scanner matches on.
@@ -224,6 +261,10 @@ scorecard|scorecard-results.sarif |Dangerous-Workflow     |HIGH
 osv      |osv-scanner.sarif       |MAL-                   |CRITICAL
 osv      |osv-scanner.sarif       |deprecated-package.*rust/Cargo\.lock |MEDIUM
 osv      |osv-scanner.sarif       |deprecated-package.*js/package-lock\.json |MEDIUM
+osv      |osv-scanner.sarif       |license-violation.*rust/Cargo\.lock |HIGH
+osv      |osv-scanner.sarif       |license-violation.*js/package-lock\.json |HIGH
+osv      |osv-scanner.sarif       |license-unknown.*rust/Cargo\.lock   |LOW
+osv      |osv-scanner.sarif       |lockfile-unreadable.*broken/package-lock\.json |MEDIUM
 EXPECTED
 
 # ---------------------------------------------------------------------------
@@ -251,6 +292,63 @@ if [ "$(jq "[$dep | select(.message.text | contains(\"sp-api-proc-macro\"))] | l
 else
     no "sp-api-proc-macro from git is reported as yanked"
 fi
+
+# ---------------------------------------------------------------------------
+# npm licences: what ships is read from package-lock.json's own flags, because
+# osv-scanner's groups cannot tell an optional dependency of a dev dependency
+# (never installed in production) from a devOptional one (installed when it
+# can be). Three real GPL-3.0 packages: one ships, two do not.
+echo "== npm licences: the shipped package, on its own line, and only that one =="
+
+lic='.runs[].results[] | select(.ruleId == "license-violation")'
+if [ "$(jq "[$lic | select(.message.text | contains(\"@subsquid/scale-codec@4.0.1\"))] | length" "$osv")" -ge 1 ]; then
+    ok "@subsquid/scale-codec (production, GPL-3.0-or-later) is reported"
+else
+    no "@subsquid/scale-codec is not reported" "$(jq -c "[$lic | .message.text]" "$osv")"
+fi
+want="$(grep -n '"node_modules/@subsquid/scale-codec"' "$work/dirty/js/package-lock.json" | cut -d: -f1)"
+got="$(jq -r "[$lic | select(.message.text | contains(\"@subsquid/scale-codec@4.0.1\"))][0].locations[0].physicalLocation.region.startLine" "$osv")"
+if [ "$got" = "$want" ]; then
+    ok "and sits on the package's own line ($want)"
+else
+    no "@subsquid/scale-codec is placed on line $got, expected $want"
+fi
+for p in "@subsquid/util-internal-hex@1.2.3 (dev)" "@substrate/connect@0.8.11 (dev + optional)"; do
+    if [ "$(jq "[$lic | select(.message.text | contains(\"${p%% *}\"))] | length" "$osv")" = 0 ]; then
+        ok "${p} is not reported"
+    else
+        no "${p} is reported although it does not ship"
+    fi
+done
+
+echo "== an excused licence is not reported at all =="
+excused='.runs[].results[] | select(.ruleId | startswith("license-"))
+    | select(.locations[0].physicalLocation.artifactLocation.uri | startswith("rust-excused/"))'
+if [ "$(jq "[$excused | select(.message.text | contains(\"polkadot-primitives\")) | select(.ruleId != \"license-excused\")] | length" "$osv")" = 0 ] \
+    && [ "$(jq "[$excused | select(.ruleId == \"license-excused\" and (.suppressions | length) > 0)] | length" "$osv")" = 1 ]; then
+    ok "license.ignore clears polkadot-primitives: listed as excused, no violation, no unknown"
+else
+    no "an excused package is still reported" "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
+fi
+if [ "$(jq "[$excused | select(.message.text | contains(\"ring@0.16.20\"))] | length" "$osv")" = 1 ]; then
+    ok "and ring beside it is still reported: the directory was scanned"
+else
+    no "ring@0.16.20 in rust-excused/ is not reported: the excused check proves nothing" \
+        "$(jq -c "[$excused | {ruleId, msg: .message.text}]" "$osv")"
+fi
+
+echo "== an osv.dev or deps.dev outage fails the scan, never passes it empty =="
+# osv-scanner only logs a failed enricher and carries on; osv-enrichers.sh
+# fails on that log line. +osv-outage runs the pinned binary with one endpoint
+# unreachable and passes only when the line is there and the check fails on it,
+# so a reworded log after a scanner bump shows up here, not as a silent gate.
+for blocked in deps.dev osv.dev; do
+    if (cd "$ROOT" && earth --no-cache ./+osv-outage --BLOCK="$blocked") > "$work/outage-$blocked.log" 2>&1; then
+        ok "with $blocked unreachable the osv check fails"
+    else
+        no "with $blocked unreachable the osv check did not fail as expected" "$(tail -5 "$work/outage-$blocked.log")"
+    fi
+done
 
 # The calibration is policy, and policy that only exists in jq drifts. These
 # assert the ceilings hold against real scanner output, not hand-written SARIF:

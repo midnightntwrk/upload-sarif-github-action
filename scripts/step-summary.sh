@@ -246,7 +246,7 @@ for f in "${sarifs[@]}"; do
     suppressed_total=$((suppressed_total + $(jq -r '.suppressed // 0' "$tmp/$base.json")))
 done
 if [ "$suppressed_total" -gt 0 ]; then
-    fold_open "$suppressed_total finding(s) suppressed in source — listed, not gated"
+    fold_open "$suppressed_total finding(s) suppressed (in source, or excused in osv-scanner.toml) — listed, not gated"
     for f in "${sarifs[@]}"; do
         base="$(basename "$f" .sarif)"
         [ "$(cat "$tmp/$base.state")" = OK ] || continue
